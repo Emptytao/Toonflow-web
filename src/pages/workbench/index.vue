@@ -6,7 +6,7 @@
       </div>
       <div class="itemBox fc ac">
         <t-tooltip
-          :content="menu.labelKey ? $t(menu.labelKey) : ''"
+          :content="menu.labelKey ? $t(menu.labelKey) : menu.label || ''"
           placement="right"
           destroyOnClose
           :showArrow="false"
@@ -45,7 +45,7 @@
         </div>
         <div class="rightBtnList f ac">
           <t-tooltip
-            :content="menu.labelKey ? $t(menu.labelKey) : ''"
+            :content="menu.labelKey ? $t(menu.labelKey) : menu.label || ''"
             placement="bottom"
             destroyOnClose
             :showArrow="false"
@@ -78,22 +78,41 @@ import axios from "@/utils/axios";
 import setting from "@/components/setting/index.vue";
 import hello from "@/components/hello.vue";
 import projectStore from "@/stores/project";
+import useProductionAgentStore from "@/stores/productionAgent";
 const { project } = storeToRefs(projectStore());
 import settingStore from "@/stores/setting";
 import { NotifyPlugin } from "tdesign-vue-next";
 const { showSetting, isElectron, needUpdate } = storeToRefs(settingStore());
-const menuList = ref([
+
+type WorkbenchButtonMenu = {
+  type: "btn";
+  path: string;
+  labelKey?: string;
+  label?: string;
+  icon: string;
+  nodelOnly?: boolean;
+  needProject?: boolean;
+};
+
+type WorkbenchDividerMenu = {
+  type: "divider";
+};
+
+type WorkbenchMenuItem = WorkbenchButtonMenu | WorkbenchDividerMenu;
+
+const menuList = ref<WorkbenchMenuItem[]>([
   { type: "btn", path: "/project", labelKey: "workbench.menu.myProject", icon: "i-folder-close" },
   { type: "btn", path: "/task", labelKey: "workbench.menu.taskCenter", icon: "i-view-list" },
   // { type: "divider" },
 ]);
 
-const rightBtnList = ref([
+const rightBtnList = ref<WorkbenchMenuItem[]>([
   { type: "btn", path: "/novel", labelKey: "workbench.menu.novel", icon: "i-notebook", nodelOnly: true },
   { type: "btn", path: "/scriptAgent", labelKey: "workbench.menu.scriptAgent", icon: "i-color-filter", nodelOnly: true },
   { type: "btn", path: "/script", labelKey: "workbench.menu.scriptManage", icon: "i-document-folder" },
   { type: "btn", path: "/cornerScape", labelKey: "workbench.menu.cornerScape", icon: "i-peoples-two" },
   { type: "btn", path: "/production", labelKey: "workbench.menu.production", icon: "i-carousel-video" },
+  { type: "btn", path: "/production-v2", label: "Production V2", icon: "i-page-template" },
   { type: "divider" },
   { type: "btn", path: "/assets", labelKey: "workbench.menu.assetCenter", icon: "i-receive" },
 ]);
@@ -109,8 +128,29 @@ watch(
   },
 );
 
-function handleClick(menu: any) {
+function handleClick(menu: WorkbenchMenuItem) {
+  if (menu.type !== "btn") return;
   if (menu.needProject && !project.value) return;
+  if (menu.path === "/production-v2") {
+    const query: Record<string, string> = {};
+    if (project.value?.id && ["/production", "/production-v2"].includes(route.path)) {
+      try {
+        const productionAgent = useProductionAgentStore();
+        if (productionAgent.episodesId) {
+          query.episodeId = String(productionAgent.episodesId);
+        }
+      } catch (error) {
+        console.warn("Failed to resolve current production episode for Production V2 navigation.", error);
+      }
+    }
+    router.push({
+      path: menu.path,
+      query: Object.keys(query).length ? query : undefined,
+    });
+    activeMenu.value = menu.path;
+    return;
+  }
+
   router.push(menu.path);
   activeMenu.value = menu.path;
 }

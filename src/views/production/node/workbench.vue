@@ -1,8 +1,12 @@
 <template>
-  <t-card class="workbench" @click="visible = !visible">
-    <div class="titleBar dragHandle pr">
+  <t-card :class="['workbench', { dialogMode: isDialogMode }]" @click="visible = !visible">
+    <NodeResizer v-if="!isDialogMode" :min-width="260" :min-height="180" line-class-name="resizeLine" handle-class-name="resizeHandle" />
+    <div class="titleBar pr" :class="{ dragHandle: !isDialogMode }">
       <div class="title">{{ $t("workbench.production.node.workbench.title") }}</div>
-      <Handle :id="props.handleIds.target" type="target" :position="Position.Left" style="left: calc(-1 * var(--td-comp-paddingLR-xl))" />
+      <div class="actions">
+        <nodeExpandButton v-if="!isDialogMode" :node-id="props.id" />
+      </div>
+      <Handle v-if="!isDialogMode" :id="props.handleIds.target" type="target" :position="Position.Left" style="left: calc(-1 * var(--td-comp-paddingLR-xl))" />
       <!-- <Handle :id="props.handleIds.source" type="source" :position="Position.Right" /> -->
     </div>
     <div class="videoPreview">
@@ -29,28 +33,38 @@
 
 <script setup lang="ts">
 import workbench from "../components/workbench/index.vue";
+import nodeExpandButton from "../components/nodeExpandButton.vue";
 import { Handle, Position } from "@vue-flow/core";
+import { NodeResizer } from "@vue-flow/node-resizer";
 
 const visible = ref(false);
 
 interface WorkbenchData {
-  name: string;
-  duration: string;
-  resolution: string;
-  fps: string;
+  videoList?: Array<Record<string, any>>;
+  name?: string;
+  duration?: string;
+  resolution?: string;
+  fps?: string;
   cover?: string;
   gradient?: string;
 }
 
-const props = defineProps<{
+const props = withDefaults(
+  defineProps<{
   id: string;
   handleIds: {
     target: string;
     source: string;
   };
-}>();
+  renderMode?: "node" | "dialog";
+}>(),
+  {
+    renderMode: "node",
+  },
+);
 
 const workbenchData = defineModel<WorkbenchData>({ required: true });
+const isDialogMode = computed(() => props.renderMode === "dialog");
 </script>
 
 <style lang="scss" scoped>
@@ -59,6 +73,13 @@ const workbenchData = defineModel<WorkbenchData>({ required: true });
   min-width: 280px;
   user-select: text;
   transition: filter 0.1s;
+
+  &.dialogMode {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
   &:hover {
     .playButton {
       transform: scale(1.1);
@@ -75,6 +96,12 @@ const workbenchData = defineModel<WorkbenchData>({ required: true });
     margin-bottom: 12px;
     cursor: grab;
     user-select: none;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .title {
@@ -132,6 +159,12 @@ const workbenchData = defineModel<WorkbenchData>({ required: true });
     .divider {
       margin: 0 6px;
       color: var(--td-border-level-1-color, #ddd);
+    }
+  }
+
+  &.dialogMode {
+    .titleBar {
+      cursor: default;
     }
   }
 }

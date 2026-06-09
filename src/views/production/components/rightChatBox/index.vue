@@ -65,7 +65,7 @@
               </template>
             </t-popup>
             <t-popup trigger="click" placement="top" v-if="showThink">
-              <t-button size="small" variant="outline" :theme="['default', 'success', 'warning', 'danger'][thinkLevel] || 'default'">
+              <t-button size="small" variant="outline" :theme="thinkThemes[thinkLevel] || 'default'">
                 <template #icon>
                   <i-tips size="16" />
                 </template>
@@ -99,6 +99,7 @@ import productionAgentStore from "@/stores/productionAgent";
 import projectStore from "@/stores/project";
 const { project } = storeToRefs(projectStore());
 const { connected, messages, status, episodesId, loadingHistory, thinkLevel } = storeToRefs(productionAgentStore());
+const thinkThemes = ["default", "success", "warning", "danger"] as const;
 const thinkLevelOptions = [
   { label: $t("workbench.scriptAgent.thinkLevel.off"), value: 0 },
   { label: $t("workbench.scriptAgent.thinkLevel.light"), value: 1 },
@@ -193,14 +194,14 @@ onMounted(async () => {
 <style lang="scss" scoped>
 .rightChatBox {
   position: absolute;
-  top: 10px;
+  top: 62px;
   right: 0;
   bottom: 10px;
   display: flex;
   flex-direction: column;
   z-index: 9999;
   min-width: 400px;
-  height: calc(100% - 20px);
+  height: calc(100% - 72px);
   margin-right: 5px;
   border-radius: 10px;
   border: 1px solid var(--td-border-level-1-color);

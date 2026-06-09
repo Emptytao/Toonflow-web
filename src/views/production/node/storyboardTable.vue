@@ -1,14 +1,18 @@
 <template>
-  <t-card class="storyboardTable">
-    <div class="titleBar dragHandle pr">
+  <t-card :class="['storyboardTable', { dialogMode: isDialogMode }]">
+    <NodeResizer v-if="!isDialogMode" :min-width="260" :min-height="160" line-class-name="resizeLine" handle-class-name="resizeHandle" />
+    <div class="titleBar pr" :class="{ dragHandle: !isDialogMode }">
       <div class="title c">{{ $t("workbench.production.node.storyboardTable.title") }}</div>
-      <t-button size="small" variant="text" @click="openEdit">{{ $t("workbench.production.edit") }}</t-button>
-      <Handle :id="props.handleIds.target" type="target" :position="Position.Left" style="left: calc(-1 * var(--td-comp-paddingLR-xl))" />
-      <Handle :id="props.handleIds.source" type="source" :position="Position.Right" style="right: calc(-1 * var(--td-comp-paddingLR-xl))" />
+      <div class="actions">
+        <nodeExpandButton v-if="!isDialogMode" :node-id="props.id" />
+        <t-button size="small" variant="text" @click="openEdit">{{ $t("workbench.production.edit") }}</t-button>
+      </div>
+      <Handle v-if="!isDialogMode" :id="props.handleIds.target" type="target" :position="Position.Left" style="left: calc(-1 * var(--td-comp-paddingLR-xl))" />
+      <Handle v-if="!isDialogMode" :id="props.handleIds.source" type="source" :position="Position.Right" style="right: calc(-1 * var(--td-comp-paddingLR-xl))" />
     </div>
     <div class="storyboardList">
       <t-empty v-if="!storyboardTable" style="margin-top: 16px"></t-empty>
-      <MdPreview v-else v-model="storyboardTable" :theme="themeSetting.mode" />
+      <MdPreview v-else v-model="storyboardTable" :theme="mdTheme" />
     </div>
   </t-card>
 
@@ -26,7 +30,7 @@
     attach="body">
     <MdEditor
       v-model="editContent"
-      :theme="themeSetting.mode"
+      :theme="mdTheme"
       :toolbars="toolbars"
       :footers="[]"
       style="height: 72vh"
@@ -39,22 +43,32 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { Handle, Position } from "@vue-flow/core";
+import { NodeResizer } from "@vue-flow/node-resizer";
 import { MdEditor, MdPreview } from "md-editor-v3";
 import type { ToolbarNames } from "md-editor-v3";
 import settingStore from "@/stores/setting";
+import nodeExpandButton from "../components/nodeExpandButton.vue";
 const { themeSetting } = storeToRefs(settingStore());
+const mdTheme = computed<"light" | "dark">(() => (themeSetting.value.mode === "dark" ? "dark" : "light"));
 
-const props = defineProps<{
+const props = withDefaults(
+  defineProps<{
   id: string;
   handleIds: {
     target: string;
     source: string;
   };
-}>();
+  renderMode?: "node" | "dialog";
+}>(),
+  {
+    renderMode: "node",
+  },
+);
 
 const storyboardTable = defineModel<string>({ required: true });
 const editContent = ref("");
 const dialogVisible = ref(false);
+const isDialogMode = computed(() => props.renderMode === "dialog");
 
 const toolbars: ToolbarNames[] = [
   "bold",
@@ -114,12 +128,24 @@ function onPaste(e: ClipboardEvent) {
   user-select: text;
   cursor: default;
 
+  &.dialogMode {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .titleBar {
     cursor: grab;
     user-select: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .title {
@@ -205,6 +231,12 @@ function onPaste(e: ClipboardEvent) {
     .sep {
       margin: 0 6px;
       color: var(--td-border-level-1-color, #ddd);
+    }
+  }
+
+  &.dialogMode {
+    .titleBar {
+      cursor: default;
     }
   }
 }

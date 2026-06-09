@@ -1153,6 +1153,22 @@
     d3-selection "^3.0.0"
     d3-zoom "^3.0.0"
 
+"@vue-flow/minimap@^1.5.4":
+  version "1.5.4"
+  resolved "https://mirrors.cloud.tencent.com/npm/@vue-flow/minimap/-/minimap-1.5.4.tgz#c9c3badea49d4166aa9cdc713017397d9df7574c"
+  integrity sha512-l4C+XTAXnRxsRpUdN7cAVFBennC1sVRzq4bDSpVK+ag7tdMczAnhFYGgbLkUw3v3sY6gokyWwMl8CDonp8eB2g==
+  dependencies:
+    d3-selection "^3.0.0"
+    d3-zoom "^3.0.0"
+
+"@vue-flow/node-resizer@^1.5.1":
+  version "1.5.1"
+  resolved "https://mirrors.cloud.tencent.com/npm/@vue-flow/node-resizer/-/node-resizer-1.5.1.tgz#78041bbf99a987ea3679e9d2e9496190263f6409"
+  integrity sha512-DNYgXTF39GXPAygVMFmgn5azgFztaWfqbWvv8D/X0HGgeunRrexJ0W94DyXH1rnndGyYAJ0KexEjyelsb+Nlbg==
+  dependencies:
+    d3-drag "^3.0.0"
+    d3-selection "^3.0.0"
+
 "@vue/compiler-core@3.5.30":
   version "3.5.30"
   resolved "https://registry.npmmirror.com/@vue/compiler-core/-/compiler-core-3.5.30.tgz#0f984da9207f24f9ddfb700052a43247a953fd9a"

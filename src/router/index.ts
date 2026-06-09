@@ -52,6 +52,10 @@ const router = createRouter({
           component: () => import("@/views/production/index.vue"),
         },
         {
+          path: "/production-v2",
+          component: () => import("@/views/productionV2/index.vue"),
+        },
+        {
           path: "/assets",
           component: () => import("@/views/assets/index.vue"),
         },
