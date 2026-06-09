@@ -1,13 +1,9 @@
 <template>
-  <t-card :class="['storyboard', { dialogMode: isDialogMode }]">
-    <NodeResizer v-if="!isDialogMode" :min-width="320" :min-height="220" line-class-name="resizeLine" handle-class-name="resizeHandle" />
-    <div class="titleBar pr" :class="{ dragHandle: !isDialogMode }">
+  <t-card class="storyboard">
+    <div class="titleBar dragHandle pr">
       <div class="title">{{ $t("workbench.production.node.storyboard.title") }}</div>
-      <div class="actions">
-        <nodeExpandButton v-if="!isDialogMode" :node-id="props.id" />
-      </div>
-      <Handle v-if="!isDialogMode" :id="props.handleIds.target" type="target" :position="Position.Left" style="left: calc(-1 * var(--td-comp-paddingLR-xl))" />
-      <Handle v-if="!isDialogMode" :id="props.handleIds.source" type="source" :position="Position.Right" style="right: calc(-1 * var(--td-comp-paddingLR-xl))" />
+      <Handle :id="props.handleIds.target" type="target" :position="Position.Left" style="left: calc(-1 * var(--td-comp-paddingLR-xl))" />
+      <Handle :id="props.handleIds.source" type="source" :position="Position.Right" style="right: calc(-1 * var(--td-comp-paddingLR-xl))" />
     </div>
     <div class="content">
       <t-empty v-if="!storyboard.length" style="margin-top: 16px"></t-empty>
@@ -122,10 +118,8 @@
 <script setup lang="ts">
 import { useLocalStorage } from "@vueuse/core";
 import editImage from "../components/editImage/index.vue";
-import nodeExpandButton from "../components/nodeExpandButton.vue";
 import { LoadingPlugin } from "tdesign-vue-next";
 import { Handle, Position, type Edge } from "@vue-flow/core";
-import { NodeResizer } from "@vue-flow/node-resizer";
 import axios from "@/utils/axios";
 import type { AssetItem, Storyboard } from "../utils/flowBuilder";
 import projectStore from "@/stores/project";
@@ -133,20 +127,14 @@ import productionAgentStore from "@/stores/productionAgent";
 const { project } = storeToRefs(projectStore());
 const { episodesId } = storeToRefs(productionAgentStore());
 
-const props = withDefaults(
-  defineProps<{
+const props = defineProps<{
   id: string;
   handleIds: {
     target: string;
     source: string;
   };
   assetsData: AssetItem[];
-  renderMode?: "node" | "dialog";
-}>(),
-  {
-    renderMode: "node",
-  },
-);
+}>();
 
 const storyboard = defineModel<Storyboard[]>({ required: true });
 
@@ -154,7 +142,6 @@ const visible = ref(false);
 const previewVisible = ref(false);
 const previewImages = ref<string[]>([]);
 const gridScale = useLocalStorage("storyboardGridScale", 1);
-const isDialogMode = computed(() => props.renderMode === "dialog");
 
 const hoveredIndex = ref<number | null>(null);
 const selectedIds = ref<number[]>([]);
@@ -480,24 +467,9 @@ function editInfo(item: Storyboard) {
   user-select: text;
   cursor: default;
 
-  &.dialogMode {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-  }
-
   .titleBar {
     cursor: grab;
     user-select: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
   }
   .title {
     background-color: #000;
@@ -690,12 +662,6 @@ function editInfo(item: Storyboard) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  &.dialogMode {
-    .titleBar {
-      cursor: default;
-    }
   }
 }
 :deep(.t-image__wrapper) {

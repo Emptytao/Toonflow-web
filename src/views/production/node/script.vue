@@ -1,18 +1,14 @@
 <template>
-  <t-card :class="['script', { dialogMode: isDialogMode }]">
-    <NodeResizer v-if="!isDialogMode" :min-width="220" :min-height="160" line-class-name="resizeLine" handle-class-name="resizeHandle" />
-    <div class="titleBar pr" :class="{ dragHandle: !isDialogMode }">
+  <t-card class="script">
+    <div class="titleBar dragHandle pr">
       <div class="title c">{{ $t("workbench.production.node.script.title") }}</div>
-      <div class="actions">
-        <nodeExpandButton v-if="!isDialogMode" :node-id="props.id" />
-        <t-button size="small" variant="text" @click="openEdit">{{ $t("workbench.production.edit") }}</t-button>
-      </div>
-      <Handle v-if="!isDialogMode" :id="props.handleIds.source" type="source" :position="Position.Right" style="right: calc(-1 * var(--td-comp-paddingLR-xl))" />
+      <t-button size="small" variant="text" @click="openEdit">{{ $t("workbench.production.edit") }}</t-button>
+      <Handle :id="props.handleIds.source" type="source" :position="Position.Right" style="right: calc(-1 * var(--td-comp-paddingLR-xl))" />
     </div>
     <div class="content">
-      <MdPreview v-model="script" :theme="mdTheme" />
+      <MdPreview v-model="script" :theme="themeSetting.mode" />
     </div>
-    <Handle v-if="!isDialogMode" :id="props.handleIds.assets" type="source" :position="Position.Bottom" />
+    <Handle :id="props.handleIds.assets" type="source" :position="Position.Bottom" />
   </t-card>
 
   <t-dialog
@@ -29,7 +25,7 @@
     attach="body">
     <MdEditor
       v-model="editContent"
-      :theme="mdTheme"
+      :theme="themeSetting.mode"
       :toolbars="toolbars"
       :footers="[]"
       style="height: 72vh"
@@ -42,32 +38,22 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { Handle, Position } from "@vue-flow/core";
-import { NodeResizer } from "@vue-flow/node-resizer";
 import { MdEditor, MdPreview } from "md-editor-v3";
 import type { ToolbarNames } from "md-editor-v3";
 import settingStore from "@/stores/setting";
-import nodeExpandButton from "../components/nodeExpandButton.vue";
 const { themeSetting } = storeToRefs(settingStore());
-const mdTheme = computed<"light" | "dark">(() => (themeSetting.value.mode === "dark" ? "dark" : "light"));
 
-const props = withDefaults(
-  defineProps<{
+const props = defineProps<{
   id: string;
   handleIds: {
     assets: string;
     source: string;
   };
-  renderMode?: "node" | "dialog";
-}>(),
-  {
-    renderMode: "node",
-  },
-);
+}>();
 
 const script = defineModel<string>({ required: true });
 const editContent = ref("");
 const dialogVisible = ref(false);
-const isDialogMode = computed(() => props.renderMode === "dialog");
 
 const toolbars: ToolbarNames[] = [
   "bold",
@@ -127,24 +113,12 @@ function onPaste(e: ClipboardEvent) {
   user-select: text;
   cursor: default;
 
-  &.dialogMode {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-  }
-
   .titleBar {
     cursor: grab;
     user-select: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
   }
 
   .title {
@@ -166,12 +140,6 @@ function onPaste(e: ClipboardEvent) {
 
     :deep(.md-editor-preview-wrapper) {
       padding: 0;
-    }
-  }
-
-  &.dialogMode {
-    .titleBar {
-      cursor: default;
     }
   }
 }

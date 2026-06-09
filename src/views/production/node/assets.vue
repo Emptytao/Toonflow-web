@@ -1,12 +1,8 @@
 <template>
-  <t-card :class="['assets', { dialogMode: isDialogMode }]">
-    <NodeResizer v-if="!isDialogMode" :min-width="260" :min-height="220" line-class-name="resizeLine" handle-class-name="resizeHandle" />
-    <Handle v-if="!isDialogMode" :id="props.handleIds.target" type="target" :position="Position.Top" />
-    <div class="titleBar" :class="{ dragHandle: !isDialogMode }">
+  <t-card class="assets">
+    <Handle :id="props.handleIds.target" type="target" :position="Position.Top" />
+    <div class="titleBar dragHandle">
       <div class="title">{{ $t("workbench.production.node.assets.title") }}</div>
-      <div class="actions">
-        <nodeExpandButton v-if="!isDialogMode" :node-id="props.id" />
-      </div>
     </div>
     <div class="content">
       <div class="cardGrid">
@@ -81,25 +77,17 @@
 
 <script setup lang="ts">
 import { Handle, Position, type Edge } from "@vue-flow/core";
-import { NodeResizer } from "@vue-flow/node-resizer";
 import editImage from "../components/editImage/index.vue";
-import nodeExpandButton from "../components/nodeExpandButton.vue";
 import { type AssetItem, type DeriveAsset } from "../utils/flowBuilder";
 import axios from "@/utils/axios";
 import useProjectStore from "@/stores/project";
 const { project } = storeToRefs(useProjectStore());
-const props = withDefaults(
-  defineProps<{
+const props = defineProps<{
   id: string;
   handleIds: {
     target: string;
   };
-  renderMode?: "node" | "dialog";
-}>(),
-  {
-    renderMode: "node",
-  },
-);
+}>();
 
 const assets = defineModel<AssetItem[]>({ required: true });
 const currentRow = ref<{
@@ -112,7 +100,6 @@ const currentRow = ref<{
 });
 const visible = ref(false);
 const currentAssetsId = ref();
-const isDialogMode = computed(() => props.renderMode === "dialog");
 function generateAssetsImage(row: DeriveAsset, referanceImageUrl: string) {
   currentRow.value = {
     flowId: row?.flowId,
@@ -179,24 +166,9 @@ async function removeFn(id: number) {
   user-select: text;
   cursor: default;
 
-  &.dialogMode {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-  }
-
   .titleBar {
     cursor: grab;
     user-select: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    .actions {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
 
     .title {
       background-color: #000;
@@ -337,12 +309,6 @@ async function removeFn(id: number) {
           }
         }
       }
-    }
-  }
-
-  &.dialogMode {
-    .titleBar {
-      cursor: default;
     }
   }
 }
