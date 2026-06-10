@@ -117,6 +117,79 @@ function makeProductionAgentStore(projectId: string) {
       },
     });
 
+    function normalizeStoryboardSocketItem(raw: {
+      prompt?: string | null;
+      duration?: number | string | null;
+      track?: string | number | null;
+      state?: string | null;
+      src?: string | null;
+      videoDesc?: string | null;
+      shouldGenerateImage?: string | number | boolean | null;
+      associateAssetsIds?: number[] | null;
+    }) {
+      const shouldGenerateImage =
+        (typeof raw.shouldGenerateImage === "boolean" && raw.shouldGenerateImage) ||
+        String(raw.shouldGenerateImage).toLowerCase() === "true" ||
+        Number(raw.shouldGenerateImage) === 1
+          ? 1
+          : 0;
+      return {
+        prompt: raw.prompt ?? "",
+        duration: Number(raw.duration) || 0,
+        track: String(raw.track ?? ""),
+        state: (raw.state as Storyboard["state"]) || ("未生成" as Storyboard["state"]),
+        src: raw.src ?? null,
+        videoDesc: raw.videoDesc ?? "",
+        shouldGenerateImage,
+        associateAssetsIds: Array.isArray(raw.associateAssetsIds) ? raw.associateAssetsIds : [],
+      };
+    }
+
+    async function appendStoryboardFromSocket(raw: Parameters<typeof normalizeStoryboardSocketItem>[0]) {
+      const normalized = normalizeStoryboardSocketItem(raw);
+      const existingIndex = flowData.value.storyboard.findIndex(
+        (item) =>
+          item.prompt === normalized.prompt && item.duration === normalized.duration && item.videoDesc === normalized.videoDesc,
+      );
+
+      if (existingIndex !== -1) {
+        flowData.value.storyboard[existingIndex] = {
+          ...flowData.value.storyboard[existingIndex],
+          ...normalized,
+        };
+      } else {
+        flowData.value.storyboard.push({
+          prompt: normalized.prompt,
+          duration: normalized.duration,
+          state: normalized.state,
+          src: normalized.src,
+          associateAssetsIds: normalized.associateAssetsIds,
+          videoDesc: normalized.videoDesc,
+          shouldGenerateImage: normalized.shouldGenerateImage,
+        });
+      }
+
+      await addStoryboardInfo([
+        {
+          prompt: normalized.prompt,
+          duration: normalized.duration,
+          track: normalized.track,
+          state: normalized.state,
+          src: normalized.src,
+          videoDesc: normalized.videoDesc,
+          shouldGenerateImage: normalized.shouldGenerateImage,
+          associateAssetsIds: normalized.associateAssetsIds,
+        },
+      ]);
+
+      return (
+        flowData.value.storyboard.find(
+          (item) =>
+            item.prompt === normalized.prompt && item.duration === normalized.duration && item.videoDesc === normalized.videoDesc,
+        ) ?? null
+      );
+    }
+
     // 实际的节流方法
     const throttledFn = useThrottleFn(
       () => {
@@ -191,6 +264,20 @@ function makeProductionAgentStore(projectId: string) {
           s.on("generateDeriveAsset", async (data, callback) => {
             const assetsData = await batchGenerateAssets(data.ids);
             callback({ success: true, message: assetsData });
+          });
+          s.on("addStoryboard", async (data, callback) => {
+            try {
+              const storyboardItem = await appendStoryboardFromSocket(data);
+              callback?.({
+                success: true,
+                message: storyboardItem,
+              });
+            } catch (e: any) {
+              callback?.({
+                success: false,
+                error: e?.message ?? "新增分镜失败",
+              });
+            }
           });
           s.on("generateStoryboard", async (data, callback) => {
             const storyData = await batchGenerateStoryboard(data.ids);

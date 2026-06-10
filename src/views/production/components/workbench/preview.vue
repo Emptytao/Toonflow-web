@@ -170,10 +170,12 @@
 <script setup lang="ts">
 import { useLocalStorage, useEventListener } from "@vueuse/core";
 import { ref, computed, watch, nextTick, onUnmounted, type Ref } from "vue";
+import { storeToRefs } from "pinia";
 import { VueDraggable } from "vue-draggable-plus";
 import { DialogPlugin } from "tdesign-vue-next";
 import axios from "@/utils/axios";
 import JSZip from "jszip";
+import projectStore from "@/stores/project";
 
 interface ShotCharacter {
   name: string;
@@ -200,18 +202,33 @@ interface Shot {
   characters?: ShotCharacter[];
 }
 const episodesId = inject<Ref<number>>("episodesId");
+const { project } = storeToRefs(projectStore());
 
-// 模拟分镜数据
 const shotList = ref<Shot[]>([]);
-onMounted(() => {
-  getShotList();
-});
 //查询分镜数据
 async function getShotList() {
-  const { data } = await axios.post("/production/getStoryboardData", {
-    scriptId: episodesId!.value,
-  });
-  shotList.value = data;
+  const scriptId = episodesId?.value;
+  const projectId = Number(project.value?.id);
+  if (!scriptId || !projectId) {
+    shotList.value = [];
+    currentShotIndex.value = 0;
+    initialOrder.value = [];
+    return;
+  }
+  try {
+    const { data } = await axios.post("/production/getStoryboardData", {
+      scriptId,
+      projectId,
+    });
+    shotList.value = data;
+    currentShotIndex.value = 0;
+    initialOrder.value = data.map((shot: Shot) => shot.id);
+  } catch (e: any) {
+    shotList.value = [];
+    currentShotIndex.value = 0;
+    initialOrder.value = [];
+    window.$message.error(e?.message ?? "读取分镜数据失败");
+  }
 }
 const currentShot = computed(() => shotList.value[currentShotIndex.value] || null);
 const currentCharacters = computed(() => currentShot.value?.characters || []);
@@ -227,7 +244,7 @@ const currentElapsed = ref(0);
 let playTimer: ReturnType<typeof setInterval> | null = null;
 const TICK_INTERVAL = 50;
 
-const initialOrder = shotList.value.map((shot) => shot.id);
+const initialOrder = ref<string[]>([]);
 
 // ===== 计算属性 =====
 
@@ -388,7 +405,7 @@ const confirmRestoreSort = () => {
     header: $t("workbench.production.preview.restoreSort"),
     body: $t("workbench.production.preview.restoreSortConfirm"),
     onConfirm: () => {
-      shotList.value.sort((a, b) => initialOrder.indexOf(a.id) - initialOrder.indexOf(b.id));
+      shotList.value.sort((a, b) => initialOrder.value.indexOf(a.id) - initialOrder.value.indexOf(b.id));
       dialog.destroy();
     },
     onClose: () => dialog.destroy(),
@@ -401,6 +418,20 @@ watch(
     selectAll.value = selections.length > 0 && selections.every(Boolean);
   },
   { deep: true },
+);
+
+watch(
+  [() => project.value?.id, () => episodesId?.value],
+  ([projectId, scriptId]) => {
+    if (!projectId || !scriptId) {
+      shotList.value = [];
+      currentShotIndex.value = 0;
+      initialOrder.value = [];
+      return;
+    }
+    void getShotList();
+  },
+  { immediate: true },
 );
 
 const onDragEnd = () => nextTick(() => (isDragging.value = false));
