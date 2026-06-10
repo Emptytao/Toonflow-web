@@ -56,6 +56,12 @@ export interface XmlTagOption {
   keepInMessage?: boolean;
 }
 
+export interface XmlTagGuardContext {
+  messageId: string;
+  message?: ChatMessagesData;
+  tag: string;
+}
+
 export interface ChatSocketEvents {
   // 发送事件
   chat: { content: string; attachments?: any[] };
@@ -76,6 +82,7 @@ export interface UseChatOptions {
   autoConnect?: boolean;
   xmlTags?: Array<string | XmlTagOption>;
   keepXmlInMessage?: boolean;
+  shouldProcessXmlTag?: (context: XmlTagGuardContext) => boolean;
   onXmlTag?: (event: XmlTagEvent) => void;
   onError?: (error: { code: string; message: string }) => void;
   onConnect?: () => void;
@@ -90,6 +97,7 @@ export function useChat(options: UseChatOptions) {
     autoConnect = true,
     xmlTags = [],
     keepXmlInMessage = true,
+    shouldProcessXmlTag,
     onXmlTag,
     onError,
     onConnect,
@@ -236,10 +244,16 @@ export function useChat(options: UseChatOptions) {
     };
   };
 
-  const stripXmlFromMessage = (text: string) => {
+  const getMessageScopedXmlTags = (messageId: string, tags: string[]) => {
+    if (!shouldProcessXmlTag) return tags;
+    const message = findMessage(messageId);
+    return tags.filter((tag) => shouldProcessXmlTag({ messageId, message, tag }));
+  };
+
+  const stripXmlFromMessageByTags = (text: string, tags: string[]) => {
     let sanitized = text;
 
-    for (const tag of hiddenXmlTags) {
+    for (const tag of tags) {
       const escapedTag = escapeRegExp(tag);
       // Match tags with or without attributes
       sanitized = sanitized.replace(new RegExp(`<${escapedTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${escapedTag}>`, "g"), "");
@@ -257,7 +271,7 @@ export function useChat(options: UseChatOptions) {
   const syncContentDisplay = (messageId: string, content: AIMessageContent) => {
     if (!isXmlTextContent(content)) return;
     const rawText = getRawContentData(messageId, content) ?? "";
-    content.data = hiddenXmlTags.length ? stripXmlFromMessage(rawText) : rawText;
+    content.data = hiddenXmlTags.length ? stripXmlFromMessageByTags(rawText, hiddenXmlTags) : rawText;
   };
 
   const syncXmlData = (messageId: string, content: AIMessageContent, messageStatus?: ChatMessageStatus) => {
@@ -270,12 +284,14 @@ export function useChat(options: UseChatOptions) {
     const nextMessageData = { ...(xmlDataByMessage.value[messageId] ?? {}) };
     const status = content.status ?? messageStatus ?? "pending";
     const rawText = getRawContentData(messageId, content);
+    const scopedXmlTags = getMessageScopedXmlTags(messageId, normalizedXmlTags);
 
     if (rawText === null) return;
+    if (!scopedXmlTags.length) return;
 
     let changed = false;
 
-    for (const tag of normalizedXmlTags) {
+    for (const tag of scopedXmlTags) {
       const parsed = parseXmlTag(rawText, tag);
       if (parsed === null) continue;
 

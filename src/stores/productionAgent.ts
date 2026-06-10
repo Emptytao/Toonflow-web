@@ -6,6 +6,10 @@ import type { FlowData, Storyboard } from "@/views/production/utils/flowBuilder"
 import type { ChatMessagesData } from "@tdesign-vue-next/chat";
 import { useThrottleFn } from "@vueuse/core";
 
+function isWorkspaceProducerMessage(name?: string) {
+  return name === "执行导演";
+}
+
 function makeProductionAgentStore(projectId: string) {
   return defineStore(`productionAgent-${projectId}`, () => {
     const defMsg: ChatMessagesData[] = [
@@ -54,6 +58,7 @@ function makeProductionAgentStore(projectId: string) {
         { tag: "storyboardTable", keepInMessage: false },
         { tag: "storyboardItem", keepInMessage: false },
       ],
+      shouldProcessXmlTag: ({ message }) => isWorkspaceProducerMessage((message as ChatMessagesData | undefined)?.name),
       onXmlTag: async (data) => {
         const { tag, value, children, attrs, status } = data;
         if (tag === "script") {
