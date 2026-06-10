@@ -7,6 +7,7 @@ export type CanvasV2WorkflowAction = "generatePrompt" | "generateVideo";
 export type CanvasV2DrawerSectionKey = "assets" | "prompts" | "workflows" | "storyboards";
 export type CanvasV2SourceKind = "upload" | "asset" | "storyboard" | "trackPrompt" | "assetPrompt" | "storyboardPrompt" | "trackVideo" | "trackWorkflow";
 export type DrawerAssetCategoryKey = "role" | "tool" | "scene" | "clip" | "audio" | "uncategorized";
+export type DrawerAssetOriginType = "native" | "derived";
 export type DrawerPromptCategoryKey = "character" | "composition" | "camera" | "style" | "lighting" | "other";
 export type DrawerPromptSourceType = "track" | "asset" | "storyboard";
 export type DrawerWorkflowSecondaryKey = "overview" | "references" | "history";
@@ -175,6 +176,12 @@ export interface DrawerSection {
 export interface DrawerAssetItem extends CanvasV2ReferencePaletteItem {
   assetGroup: CanvasV2FileType;
   libraryCategory: DrawerAssetCategoryKey;
+  assetOrigin?: DrawerAssetOriginType;
+  rootAssetId?: number | null;
+  rootAssetName?: string;
+  parentAssetId?: number | null;
+  detailText?: string;
+  state?: string;
 }
 
 export interface DrawerPromptItem {

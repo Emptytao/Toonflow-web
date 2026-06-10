@@ -21,6 +21,7 @@ import type {
   CanvasV2WorkflowAction,
   DrawerAssetCategoryKey,
   DrawerAssetItem,
+  DrawerAssetOriginType,
   DrawerPromptCategoryKey,
   DrawerPromptItem,
   DrawerPromptSourceType,
@@ -150,14 +151,46 @@ function classifyPromptCategory(input: {
   return "other";
 }
 
-function flattenAssetRecords(records: any[]): Array<{ id: number; type?: unknown; sonAssets?: any[] }> {
-  const result: Array<{ id: number; type?: unknown; sonAssets?: any[] }> = [];
-  const walk = (items: any[]) => {
+type FlattenedAssetRecord = {
+  id: number;
+  type?: unknown;
+  name?: unknown;
+  describe?: unknown;
+  desc?: unknown;
+  remark?: unknown;
+  assetsId?: unknown;
+  sonAssets?: any[];
+  parentId?: number | null;
+  rootId?: number | null;
+  rootName?: string;
+};
+
+type ReferencedAssetLookupMeta = {
+  libraryCategory: DrawerAssetCategoryKey;
+  rootAssetId: number | null;
+  rootAssetName: string;
+  parentAssetId: number | null;
+  assetOrigin: DrawerAssetOriginType;
+  detailText: string;
+};
+
+function flattenAssetRecords(records: any[]): FlattenedAssetRecord[] {
+  const result: FlattenedAssetRecord[] = [];
+  const walk = (items: any[], parentId: number | null = null, rootId: number | null = null, rootName = "") => {
     items.forEach((item) => {
       if (!item || typeof item !== "object") return;
-      result.push(item);
+      const assetId = Number(item?.id || 0) || null;
+      const nextRootId = rootId ?? assetId;
+      const nextRootName = rootName || String(item?.name || "");
+      result.push({
+        ...item,
+        id: Number(item?.id || 0),
+        parentId,
+        rootId: nextRootId,
+        rootName: nextRootName,
+      });
       if (Array.isArray(item.sonAssets) && item.sonAssets.length) {
-        walk(item.sonAssets);
+        walk(item.sonAssets, assetId, nextRootId, nextRootName);
       }
     });
   };
@@ -188,6 +221,13 @@ function normalizeLegacyRuntimeStatus(state: unknown): CanvasV2RuntimeStatus {
 function normalizeFileType(value: unknown): CanvasV2FileType {
   if (value === "video" || value === "audio") return value;
   return "image";
+}
+
+function inferFileTypeFromUrl(url: unknown, fallback: CanvasV2FileType = "image"): CanvasV2FileType {
+  const normalized = String(url || "").toLowerCase();
+  if (/\.(mp4|mov|m4v|webm|avi|mkv)(?:$|\?)/.test(normalized)) return "video";
+  if (/\.(mp3|wav|m4a|aac|ogg|flac)(?:$|\?)/.test(normalized)) return "audio";
+  return fallback;
 }
 
 function toTimestamp(value: unknown) {
@@ -1163,10 +1203,10 @@ export default defineStore("productionCanvasV2", () => {
     queueSave();
   }
 
-  async function loadReferencedAssetCategoryMap(assetIds: number[]) {
+  async function loadReferencedAssetMetaMap(assetIds: number[]) {
     const uniqueIds = Array.from(new Set(assetIds.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0)));
-    const categoryMap = new Map<number, DrawerAssetCategoryKey>();
-    if (!projectId.value || !uniqueIds.length) return categoryMap;
+    const assetLookupMap = new Map<number, ReferencedAssetLookupMeta>();
+    if (!projectId.value || !uniqueIds.length) return assetLookupMap;
     const unresolvedIds = new Set(uniqueIds);
 
     for (const entry of ASSET_CATEGORY_QUERY_MAP) {
@@ -1185,7 +1225,16 @@ export default defineStore("productionCanvasV2", () => {
         flattenAssetRecords(rows).forEach((item) => {
           const assetId = Number(item?.id || 0);
           if (!assetId || !unresolvedIds.has(assetId)) return;
-          categoryMap.set(assetId, normalizeAssetLibraryCategory(item?.type, entry.category));
+          const parentAssetId = Number(item?.parentId || item?.assetsId || 0) || null;
+          const rootAssetId = Number(item?.rootId || parentAssetId || assetId) || assetId;
+          assetLookupMap.set(assetId, {
+            libraryCategory: normalizeAssetLibraryCategory(item?.type, entry.category),
+            rootAssetId,
+            rootAssetName: String(item?.rootName || item?.name || `资产 ${rootAssetId}`),
+            parentAssetId,
+            assetOrigin: parentAssetId ? "derived" : "native",
+            detailText: String(item?.describe || item?.desc || item?.remark || ""),
+          });
           unresolvedIds.delete(assetId);
         });
         const total = Number(data?.total || 0);
@@ -1196,11 +1245,18 @@ export default defineStore("productionCanvasV2", () => {
     }
 
     uniqueIds.forEach((id) => {
-      if (!categoryMap.has(id)) {
-        categoryMap.set(id, "uncategorized");
+      if (!assetLookupMap.has(id)) {
+        assetLookupMap.set(id, {
+          libraryCategory: "uncategorized",
+          rootAssetId: id,
+          rootAssetName: `资产 ${id}`,
+          parentAssetId: null,
+          assetOrigin: "native",
+          detailText: "",
+        });
       }
     });
-    return categoryMap;
+    return assetLookupMap;
   }
 
   async function loadReferenceDrawerData() {
@@ -1210,11 +1266,18 @@ export default defineStore("productionCanvasV2", () => {
       return;
     }
     try {
-      const { data } = await axios.post("/production/workbench/getGenerateData", {
-        projectId: projectId.value,
-        scriptId: episodeId.value,
-      });
-      const trackList = cloneDocument(data?.trackList ?? []);
+      let workbenchData: Record<string, any> = {};
+      try {
+        const { data } = await axios.post("/production/workbench/getGenerateData", {
+          projectId: projectId.value,
+          scriptId: episodeId.value,
+        });
+        if (data && typeof data === "object") {
+          workbenchData = data;
+        }
+      } catch {}
+
+      const trackList = cloneDocument(Array.isArray(workbenchData?.trackList) ? workbenchData.trackList : []);
       const runningVideoIds = trackList
         .flatMap((track: any) => (track?.videoList ?? []).filter((item: any) => item?.state === "生成中").map((item: any) => item.id))
         .filter((id: any) => Number.isFinite(Number(id)));
@@ -1244,7 +1307,12 @@ export default defineStore("productionCanvasV2", () => {
             .map((item: any) => Number(item.id)),
         )
         .filter((item: number) => Number.isFinite(item) && item > 0);
-      const assetCategoryMap = await loadReferencedAssetCategoryMap(referencedAssetIds);
+      let assetMetaMap = new Map<number, ReferencedAssetLookupMeta>();
+      if (referencedAssetIds.length) {
+        try {
+          assetMetaMap = await loadReferencedAssetMetaMap(referencedAssetIds);
+        } catch {}
+      }
 
       const assetBuckets = {
         image: [] as CanvasV2ReferenceDrawerData["assets"]["image"],
@@ -1257,45 +1325,143 @@ export default defineStore("productionCanvasV2", () => {
       const assetMap = new Map<string, CanvasV2ReferenceDrawerData["assets"]["image"][number] | CanvasV2ReferenceDrawerData["assets"]["video"][number] | CanvasV2ReferenceDrawerData["assets"]["audio"][number]>();
       const promptMap = new Map<string, DrawerPromptItem>();
 
-      (data?.storyboardList ?? []).forEach((item: any) => {
-        if (!item?.id || !item?.src) return;
-        const promptText = String(item?.prompt || item?.videoDesc || "").trim();
+      const upsertStoryboardItem = (item: {
+        sourceId: number;
+        label: string;
+        subtitle: string;
+        url: string;
+        promptText?: string;
+      }) => {
+        if (!item.sourceId || !item.url) return;
+        const existing = storyboards.find((entry) => entry.imageItem.sourceId === item.sourceId);
+        if (existing) {
+          if (!existing.promptText && item.promptText) {
+            existing.promptText = item.promptText;
+            existing.promptSourceRef = createSourceRef("storyboardPrompt", item.sourceId);
+          }
+          return;
+        }
         const imageItem: CanvasV2ReferencePaletteItem = {
-          id: `storyboard-${item.id}`,
+          id: `storyboard-${item.sourceId}`,
           sourceType: "storyboard",
-          sourceId: Number(item.id),
+          sourceId: item.sourceId,
           fileType: "image",
-          label: `分镜 #${item.index ?? item.id}`,
-          subtitle: item.videoDesc || item.prompt || "Storyboard",
-          url: item.src,
-          prompt: promptText,
-          sourceRef: createSourceRef("storyboard", Number(item.id)),
+          label: item.label,
+          subtitle: item.subtitle,
+          url: item.url,
+          prompt: item.promptText,
+          sourceRef: createSourceRef("storyboard", item.sourceId),
         };
         storyboards.push({
           id: imageItem.id,
           label: imageItem.label,
           subtitle: imageItem.subtitle,
           imageItem,
-          promptText: promptText || undefined,
-          promptSourceRef: promptText ? createSourceRef("storyboardPrompt", Number(item.id)) : null,
+          promptText: item.promptText || undefined,
+          promptSourceRef: item.promptText ? createSourceRef("storyboardPrompt", item.sourceId) : null,
         });
-        if (promptText) {
-          promptMap.set(`storyboard-prompt-${item.id}`, {
-            id: `storyboard-prompt-${item.id}`,
+        if (item.promptText) {
+          promptMap.set(`storyboard-prompt-${item.sourceId}`, {
+            id: `storyboard-prompt-${item.sourceId}`,
             label: `${imageItem.label} 文案`,
             subtitle: "分镜参考提示词",
-            text: promptText,
-            previewUrl: item.src,
+            text: item.promptText,
+            previewUrl: item.url,
             sourceType: "storyboard",
             libraryCategory: classifyPromptCategory({
               label: `${imageItem.label} 文案`,
               subtitle: "分镜参考提示词",
-              text: promptText,
+              text: item.promptText,
               sourceType: "storyboard",
             }),
-            sourceRef: createSourceRef("storyboardPrompt", Number(item.id)),
+            sourceRef: createSourceRef("storyboardPrompt", item.sourceId),
           });
         }
+      };
+
+      const upsertAssetItem = (item: {
+        sourceId: number;
+        label: string;
+        subtitle: string;
+        url: string;
+        prompt?: string;
+        fileType: CanvasV2FileType;
+        libraryCategory: DrawerAssetCategoryKey;
+        trackId?: number | null;
+        rootAssetId?: number | null;
+        rootAssetName?: string;
+        parentAssetId?: number | null;
+        assetOrigin?: DrawerAssetOriginType;
+        detailText?: string;
+        state?: string;
+      }) => {
+        if (!item.sourceId) return;
+        const assetKey = `assets-${item.sourceId}-${item.fileType}`;
+        const referenceItem: CanvasV2ReferencePaletteItem = {
+          id: assetKey,
+          sourceType: "assets",
+          sourceId: item.sourceId,
+          fileType: item.fileType,
+          label: item.label,
+          subtitle: item.subtitle,
+          url: item.url,
+          prompt: item.prompt || "",
+          sourceRef: createSourceRef("asset", item.sourceId, {
+            trackId: item.trackId ?? null,
+          }),
+        };
+        const existing = assetMap.get(assetKey);
+        const assetOrigin: DrawerAssetOriginType = item.assetOrigin === "derived" || existing?.assetOrigin === "derived" ? "derived" : "native";
+        const nextAssetItem: DrawerAssetItem = {
+          ...(existing ?? {}),
+          ...referenceItem,
+          assetGroup: item.fileType,
+          libraryCategory: existing?.libraryCategory && existing.libraryCategory !== "uncategorized" ? existing.libraryCategory : item.libraryCategory,
+          assetOrigin,
+          rootAssetId: item.rootAssetId ?? existing?.rootAssetId ?? item.sourceId,
+          rootAssetName: String(item.rootAssetName || existing?.rootAssetName || item.label || `资产 ${item.sourceId}`),
+          parentAssetId: item.parentAssetId !== undefined ? item.parentAssetId : (existing?.parentAssetId ?? null),
+          detailText: String(item.detailText || existing?.detailText || item.subtitle || ""),
+          state: String(item.state || existing?.state || ""),
+        };
+        if (existing) {
+          Object.assign(existing, nextAssetItem);
+        } else {
+          assetMap.set(assetKey, nextAssetItem);
+          assetBuckets[item.fileType].push(nextAssetItem);
+        }
+        const assetPrompt = String(item.prompt || "").trim();
+        if (assetPrompt) {
+          promptMap.set(`asset-prompt-${item.sourceId}`, {
+            id: `asset-prompt-${item.sourceId}`,
+            label: item.label,
+            subtitle: "资产提示词",
+            text: assetPrompt,
+            previewUrl: item.url,
+            sourceType: "asset",
+            libraryCategory: classifyPromptCategory({
+              label: item.label,
+              subtitle: "资产提示词",
+              text: assetPrompt,
+              sourceType: "asset",
+            }),
+            sourceRef: createSourceRef("assetPrompt", item.sourceId, {
+              trackId: item.trackId ?? null,
+            }),
+          });
+        }
+      };
+
+      (workbenchData?.storyboardList ?? []).forEach((item: any) => {
+        if (!item?.id || !item?.src) return;
+        const promptText = String(item?.prompt || item?.videoDesc || "").trim();
+        upsertStoryboardItem({
+          sourceId: Number(item.id),
+          label: `分镜 #${item.index ?? item.id}`,
+          subtitle: item.videoDesc || item.prompt || "Storyboard",
+          url: item.src,
+          promptText,
+        });
       });
 
       trackList.forEach((track: any) => {
@@ -1327,35 +1493,23 @@ export default defineStore("productionCanvasV2", () => {
             imageReferences.push(referenceItem);
           }
           if (sourceType === "assets") {
-            const assetKey = `${sourceType}-${sourceId}-${fileType}`;
-            if (!assetMap.has(assetKey)) {
-              const libraryCategory = fileType === "audio" ? "audio" : (assetCategoryMap.get(sourceId) ?? "uncategorized");
-              const assetItem: DrawerAssetItem = {
-                ...referenceItem,
-                assetGroup: fileType,
-                libraryCategory,
-              };
-              assetMap.set(assetKey, assetItem);
-              assetBuckets[fileType].push(assetItem);
-            }
-            const assetPrompt = String(item?.prompt || "").trim();
-            if (assetPrompt) {
-              promptMap.set(`asset-prompt-${sourceId}`, {
-                id: `asset-prompt-${sourceId}`,
-                label: referenceItem.label,
-                subtitle: "资产提示词",
-                text: assetPrompt,
-                previewUrl: referenceItem.url,
-                sourceType: "asset",
-                libraryCategory: classifyPromptCategory({
-                  label: referenceItem.label,
-                  subtitle: "资产提示词",
-                  text: assetPrompt,
-                  sourceType: "asset",
-                }),
-                sourceRef: createSourceRef("assetPrompt", sourceId, { trackId }),
-              });
-            }
+            const assetMeta = assetMetaMap.get(sourceId);
+            upsertAssetItem({
+              sourceId,
+              label: referenceItem.label,
+              subtitle: referenceItem.subtitle,
+              url: referenceItem.url,
+              prompt: item?.prompt || referenceItem.prompt || "",
+              fileType,
+              libraryCategory: fileType === "audio" ? "audio" : (assetMeta?.libraryCategory ?? "uncategorized"),
+              trackId,
+              rootAssetId: assetMeta?.rootAssetId ?? (Number(item?.assetsId || 0) || sourceId),
+              rootAssetName: assetMeta?.rootAssetName || String(item?.name || referenceItem.label || `资产 ${sourceId}`),
+              parentAssetId: assetMeta?.parentAssetId ?? (Number(item?.assetsId || 0) || null),
+              assetOrigin: assetMeta?.assetOrigin ?? (Number(item?.assetsId || 0) ? "derived" : "native"),
+              detailText: assetMeta?.detailText || String(item?.describe || item?.desc || item?.remark || item?.prompt || referenceItem.subtitle || ""),
+              state: String(item?.state || ""),
+            });
           }
         });
 
@@ -1409,6 +1563,68 @@ export default defineStore("productionCanvasV2", () => {
           }),
         });
       });
+
+      try {
+        const { data: legacyFlowData } = await axios.post("/production/getFlowData", {
+          projectId: projectId.value,
+          episodesId: episodeId.value,
+        });
+        const legacyAssets = Array.isArray(legacyFlowData?.assets) ? legacyFlowData.assets : [];
+        legacyAssets.forEach((asset: any) => {
+          const category = normalizeAssetLibraryCategory(asset?.type);
+          const parentFileType =
+            category === "audio" ? "audio" : inferFileTypeFromUrl(asset?.src, category === "audio" ? "audio" : "image");
+          upsertAssetItem({
+            sourceId: Number(asset?.id || 0),
+            label: String(asset?.name || `资产 ${asset?.id || ""}`),
+            subtitle: String(asset?.desc || `${category === "uncategorized" ? "资产" : normalizeAssetLibraryCategory(asset?.type, "clip")}`),
+            url: String(asset?.src || ""),
+            prompt: String(asset?.prompt || ""),
+            fileType: parentFileType,
+            libraryCategory: category,
+            rootAssetId: Number(asset?.id || 0) || null,
+            rootAssetName: String(asset?.name || `资产 ${asset?.id || ""}`),
+            parentAssetId: null,
+            assetOrigin: "native",
+            detailText: String(asset?.desc || asset?.describe || ""),
+            state: String(asset?.state || ""),
+          });
+
+          (Array.isArray(asset?.derive) ? asset.derive : []).forEach((deriveItem: any) => {
+            const deriveCategory = normalizeAssetLibraryCategory(deriveItem?.type, category);
+            const deriveFileType =
+              deriveCategory === "audio" ? "audio" : inferFileTypeFromUrl(deriveItem?.src, deriveCategory === "audio" ? "audio" : "image");
+            upsertAssetItem({
+              sourceId: Number(deriveItem?.id || 0),
+              label: String(deriveItem?.name || `${asset?.name || "资产"} 派生`),
+              subtitle: String(deriveItem?.desc || asset?.desc || "派生资产"),
+              url: String(deriveItem?.src || ""),
+              prompt: String(deriveItem?.prompt || ""),
+              fileType: deriveFileType,
+              libraryCategory: deriveCategory,
+              rootAssetId: Number(asset?.id || 0) || Number(deriveItem?.assetsId || 0) || null,
+              rootAssetName: String(asset?.name || `资产 ${asset?.id || ""}`),
+              parentAssetId: Number(asset?.id || 0) || Number(deriveItem?.assetsId || 0) || null,
+              assetOrigin: "derived",
+              detailText: String(deriveItem?.desc || asset?.desc || ""),
+              state: String(deriveItem?.state || ""),
+            });
+          });
+        });
+
+        const legacyStoryboards = Array.isArray(legacyFlowData?.storyboard) ? legacyFlowData.storyboard : [];
+        legacyStoryboards.forEach((item: any) => {
+          if (!item?.id || !item?.src) return;
+          const promptText = String(item?.videoDesc || item?.prompt || "").trim();
+          upsertStoryboardItem({
+            sourceId: Number(item.id),
+            label: `分镜 #${item.index ?? item.id}`,
+            subtitle: item.videoDesc || item.prompt || "Storyboard",
+            url: item.src,
+            promptText,
+          });
+        });
+      } catch {}
 
       prompts.push(...Array.from(promptMap.values()));
       referenceDrawer.value = {

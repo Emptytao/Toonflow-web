@@ -127,7 +127,7 @@ interface ModelType {
   id: number;
   model: string;
   modelName: string;
-  vendorId: number | null;
+  vendorId: string | null;
   name: string;
   icon: string;
   desc: string;
@@ -185,25 +185,25 @@ function startConfig(item: ModelType, source: string) {
   type.value = source;
 }
 
-const currentVendorId = ref<number | null>(null);
 function confirmConfig() {
+  const [nextVendorId, nextModelName] = selectValue.value.split(/:(.+)/);
   if (currentItem.value) {
-    currentItem.value.model = selectLabel.value;
-    currentItem.value.modelName = selectValue.value;
-    currentItem.value.vendorId = currentVendorId.value;
+    currentItem.value.model = selectLabel.value || currentItem.value.model;
+    currentItem.value.modelName = selectValue.value || currentItem.value.modelName;
+    currentItem.value.vendorId = nextVendorId || currentItem.value.vendorId || null;
   }
   const data = {
     id: currentItem.value?.id,
     name: currentItem.value?.name,
-    model: selectLabel.value || selectValue.value.split(/:(.+)/)[1] || currentItem.value?.model,
+    model: selectLabel.value || nextModelName || currentItem.value?.model,
     modelName: currentItem.value?.modelName,
-    vendorId: selectValue.value.split(/:(.+)/)[0],
+    vendorId: nextVendorId || currentItem.value?.vendorId || null,
     desc: currentItem.value?.desc,
     temperature: currentItem.value?.temperature ?? 1,
     maxOutputTokens: currentItem.value?.maxOutputTokens ?? 0,
   };
   axios
-    .post("/setting/agentDeploy/deployAgentModel", data)
+    .post("/setting/agentDeploy/deployAgentModel", { items: [data] })
     .then(() => {
       window.$message.success($t("settings.agent.msg.configSuccess"));
       getAgentDeploy();

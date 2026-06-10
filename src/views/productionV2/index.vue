@@ -71,6 +71,13 @@
                   :class="{ selected: activeDrawerSelectedId === item.id }"
                   @click="selectDrawerItem(item.id)">
                   <div class="drawer-list-item-body">
+                    <div
+                      v-if="item.previewUrl && (item.previewKind === 'image' || item.previewKind === 'video')"
+                      class="drawer-list-item-preview"
+                      :class="`kind-${item.previewKind}`">
+                      <img v-if="item.previewKind === 'image'" :src="item.previewUrl" :alt="item.title" loading="lazy" />
+                      <video v-else-if="item.previewKind === 'video'" :src="item.previewUrl" muted playsinline preload="metadata" />
+                    </div>
                     <div class="drawer-list-item-topline">
                       <div class="drawer-list-item-title">{{ item.title }}</div>
                       <span v-if="item.badge" class="drawer-list-item-badge">{{ item.badge }}</span>
@@ -90,27 +97,67 @@
             </div>
 
             <div class="drawer-panel drawer-detail-panel">
-              <template v-if="drawerSection === 'assets' && selectedAssetItem">
+              <template v-if="drawerSection === 'assets' && selectedAssetGroup">
                 <div class="drawer-detail-head">
                   <div>
-                    <div class="drawer-detail-title">{{ selectedAssetItem.label }}</div>
-                    <div class="drawer-detail-subtitle">{{ selectedAssetItem.subtitle || "当前资产引用" }}</div>
+                    <div class="drawer-detail-title">{{ selectedAssetGroup.title }}</div>
+                    <div class="drawer-detail-subtitle">{{ selectedAssetGroup.subtitle || "当前资产主体" }}</div>
                   </div>
                   <div class="drawer-chip-row">
-                    <span class="drawer-chip">{{ getAssetCategoryLabel(selectedAssetItem.libraryCategory) }}</span>
-                    <span class="drawer-chip">{{ getFileTypeLabel(selectedAssetItem.fileType) }}</span>
+                    <span class="drawer-chip">{{ getAssetCategoryLabel(selectedAssetGroup.libraryCategory) }}</span>
+                    <span class="drawer-chip">{{ selectedAssetGroup.nativeItems.length }} 个原生资产</span>
+                    <span class="drawer-chip">{{ selectedAssetGroup.derivedItems.length }} 个衍生资产</span>
                   </div>
                 </div>
                 <div class="drawer-detail-section">
-                  <div class="drawer-detail-label">引用说明</div>
-                  <div class="drawer-detail-text">{{ selectedAssetItem.prompt || selectedAssetItem.subtitle || "当前资产暂无补充说明。" }}</div>
+                  <div class="drawer-detail-label">资产详情</div>
+                  <div class="drawer-detail-text">{{ selectedAssetGroup.detailText || selectedAssetGroup.summary || "当前主体暂无补充说明。" }}</div>
                 </div>
                 <div class="drawer-detail-section">
-                  <div class="drawer-detail-label">来源</div>
-                  <div class="drawer-detail-text">{{ selectedAssetItem.url || "当前资产仅保留引用快照。" }}</div>
+                  <div class="drawer-detail-label">原生资产</div>
+                  <div class="drawer-reference-list">
+                    <div v-for="asset in selectedAssetGroup.nativeItems" :key="asset.id" class="drawer-reference-item">
+                      <div v-if="asset.url && asset.fileType !== 'audio'" class="drawer-reference-preview" :class="`kind-${asset.fileType}`">
+                        <img v-if="asset.fileType === 'image'" :src="asset.url" :alt="asset.label" loading="lazy" />
+                        <video v-else-if="asset.fileType === 'video'" :src="asset.url" muted playsinline preload="metadata" />
+                      </div>
+                      <div class="drawer-reference-body">
+                        <div class="drawer-reference-title">{{ asset.label }}</div>
+                        <div class="drawer-reference-subtitle">{{ getAssetItemSubtitle(asset) }}</div>
+                        <div class="drawer-reference-summary">{{ getAssetItemSummary(asset) }}</div>
+                        <div class="drawer-chip-row">
+                          <span class="drawer-chip">{{ getAssetOriginLabel(asset.assetOrigin) }}</span>
+                          <span class="drawer-chip">{{ getFileTypeLabel(asset.fileType) }}</span>
+                          <span v-if="asset.state" class="drawer-chip">{{ asset.state }}</span>
+                        </div>
+                      </div>
+                      <button class="drawer-action" @click="sendAssetItem(asset)">发送到画布</button>
+                    </div>
+                    <div v-if="!selectedAssetGroup.nativeItems.length" class="drawer-empty inline-empty">当前主体暂无原生资产</div>
+                  </div>
                 </div>
-                <div class="drawer-detail-actions">
-                  <button class="drawer-action primary" @click="sendAssetItem(selectedAssetItem)">发送到画布</button>
+                <div class="drawer-detail-section">
+                  <div class="drawer-detail-label">衍生资产</div>
+                  <div class="drawer-reference-list">
+                    <div v-for="asset in selectedAssetGroup.derivedItems" :key="asset.id" class="drawer-reference-item">
+                      <div v-if="asset.url && asset.fileType !== 'audio'" class="drawer-reference-preview" :class="`kind-${asset.fileType}`">
+                        <img v-if="asset.fileType === 'image'" :src="asset.url" :alt="asset.label" loading="lazy" />
+                        <video v-else-if="asset.fileType === 'video'" :src="asset.url" muted playsinline preload="metadata" />
+                      </div>
+                      <div class="drawer-reference-body">
+                        <div class="drawer-reference-title">{{ asset.label }}</div>
+                        <div class="drawer-reference-subtitle">{{ getAssetItemSubtitle(asset) }}</div>
+                        <div class="drawer-reference-summary">{{ getAssetItemSummary(asset) }}</div>
+                        <div class="drawer-chip-row">
+                          <span class="drawer-chip">{{ getAssetOriginLabel(asset.assetOrigin) }}</span>
+                          <span class="drawer-chip">{{ getFileTypeLabel(asset.fileType) }}</span>
+                          <span v-if="asset.state" class="drawer-chip">{{ asset.state }}</span>
+                        </div>
+                      </div>
+                      <button class="drawer-action" @click="sendAssetItem(asset)">发送到画布</button>
+                    </div>
+                    <div v-if="!selectedAssetGroup.derivedItems.length" class="drawer-empty inline-empty">当前主体暂无衍生资产</div>
+                  </div>
                 </div>
               </template>
 
@@ -450,6 +497,19 @@ import type {
   VideoNodeDataV2,
 } from "./types";
 
+type AssetDrawerGroup = {
+  id: string;
+  title: string;
+  subtitle: string;
+  summary: string;
+  detailText: string;
+  libraryCategory: DrawerAssetCategoryKey;
+  rootAssetId: number | null;
+  rootAssetName: string;
+  nativeItems: DrawerAssetItem[];
+  derivedItems: DrawerAssetItem[];
+};
+
 const store = useProductionCanvasV2Store();
 const { project } = storeToRefs(projectStore());
 const route = useRoute();
@@ -612,7 +672,11 @@ const drawerSections = computed<DrawerSection[]>(() => [
   {
     key: "assets",
     label: "资产",
-    count: store.referenceDrawer.assets.image.length + store.referenceDrawer.assets.video.length + store.referenceDrawer.assets.audio.length,
+    count: buildAssetGroups([
+      ...store.referenceDrawer.assets.image,
+      ...store.referenceDrawer.assets.video,
+      ...store.referenceDrawer.assets.audio,
+    ]).length,
   },
   {
     key: "prompts",
@@ -680,6 +744,18 @@ function getAssetCategoryLabel(category: DrawerAssetCategoryKey) {
   return assetCategoryLabelMap[category] || assetCategoryLabelMap.uncategorized;
 }
 
+function getAssetOriginLabel(origin?: DrawerAssetItem["assetOrigin"]) {
+  return origin === "derived" ? "衍生资产" : "原生资产";
+}
+
+function getAssetItemSubtitle(item: DrawerAssetItem) {
+  return item.subtitle || `${getAssetOriginLabel(item.assetOrigin)} · ${getFileTypeLabel(item.fileType)}`;
+}
+
+function getAssetItemSummary(item: DrawerAssetItem) {
+  return item.detailText || item.prompt || item.subtitle || "当前资产暂无详情。";
+}
+
 function getPromptCategoryLabel(category: DrawerPromptCategoryKey) {
   return promptCategoryLabelMap[category] || promptCategoryLabelMap.other;
 }
@@ -704,13 +780,62 @@ const allDrawerAssetItems = computed<DrawerAssetItem[]>(() => [
   ...store.referenceDrawer.assets.audio,
 ]);
 
+function buildAssetGroups(items: DrawerAssetItem[]) {
+  const groupMap = new Map<string, AssetDrawerGroup>();
+  items.forEach((item) => {
+    const rootAssetId = item.rootAssetId ?? item.sourceId ?? null;
+    const rootAssetName = String(item.rootAssetName || item.label || (rootAssetId ? `资产 ${rootAssetId}` : "未命名资产"));
+    const groupId = `asset-group-${rootAssetId ?? item.sourceId}`;
+    const existing = groupMap.get(groupId);
+    if (!existing) {
+      groupMap.set(groupId, {
+        id: groupId,
+        title: rootAssetName,
+        subtitle: `${getAssetCategoryLabel(item.libraryCategory)}主体`,
+        summary: getAssetItemSummary(item),
+        detailText: item.detailText || item.prompt || item.subtitle || "",
+        libraryCategory: item.libraryCategory,
+        rootAssetId,
+        rootAssetName,
+        nativeItems: item.assetOrigin === "derived" ? [] : [item],
+        derivedItems: item.assetOrigin === "derived" ? [item] : [],
+      });
+      return;
+    }
+
+    if (item.assetOrigin === "derived") {
+      existing.derivedItems.push(item);
+    } else {
+      existing.nativeItems.push(item);
+    }
+    if (!existing.detailText && item.detailText) {
+      existing.detailText = item.detailText;
+    }
+    if (!existing.summary) {
+      existing.summary = getAssetItemSummary(item);
+    }
+  });
+
+  return Array.from(groupMap.values())
+    .map((group) => {
+      const primaryNative = group.nativeItems[0];
+      const primaryItem = primaryNative || group.derivedItems[0];
+      return {
+        ...group,
+        subtitle: primaryNative?.subtitle || primaryItem?.subtitle || `${getAssetCategoryLabel(group.libraryCategory)}主体`,
+        summary: group.detailText || getAssetItemSummary(primaryItem),
+      };
+    })
+    .sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+}
+
 const assetSecondaryTabs = computed<DrawerSecondaryTab[]>(() => {
   const baseTabs: DrawerSecondaryTab[] = ["role", "tool", "scene", "clip", "audio"].map((key) => ({
     key,
     label: assetCategoryLabelMap[key as DrawerAssetCategoryKey],
-    count: allDrawerAssetItems.value.filter((item) => item.libraryCategory === key).length,
+    count: buildAssetGroups(allDrawerAssetItems.value.filter((item) => item.libraryCategory === key)).length,
   }));
-  const uncategorizedCount = allDrawerAssetItems.value.filter((item) => item.libraryCategory === "uncategorized").length;
+  const uncategorizedCount = buildAssetGroups(allDrawerAssetItems.value.filter((item) => item.libraryCategory === "uncategorized")).length;
   if (uncategorizedCount || drawerLibraryState.assets.secondaryKey === "uncategorized") {
     baseTabs.push({
       key: "uncategorized",
@@ -773,12 +898,22 @@ const activeDrawerSecondaryLabel = computed(() => {
 });
 
 const filteredAssetItems = computed<DrawerAssetItem[]>(() => {
-  const keyword = drawerLibraryState.assets.keyword;
   const secondaryKey = drawerLibraryState.assets.secondaryKey as DrawerAssetCategoryKey;
-  return allDrawerAssetItems.value.filter(
-    (item) =>
-      item.libraryCategory === secondaryKey &&
-      matchDrawerKeyword(keyword, [item.label, item.subtitle, item.prompt, getFileTypeLabel(item.fileType), getAssetCategoryLabel(item.libraryCategory)]),
+  return allDrawerAssetItems.value.filter((item) => item.libraryCategory === secondaryKey);
+});
+
+const filteredAssetGroups = computed<AssetDrawerGroup[]>(() => {
+  const keyword = drawerLibraryState.assets.keyword;
+  return buildAssetGroups(filteredAssetItems.value).filter((group) =>
+    matchDrawerKeyword(keyword, [
+      group.title,
+      group.subtitle,
+      group.summary,
+      group.detailText,
+      getAssetCategoryLabel(group.libraryCategory),
+      ...group.nativeItems.flatMap((item) => [item.label, item.subtitle, item.prompt, item.detailText]),
+      ...group.derivedItems.flatMap((item) => [item.label, item.subtitle, item.prompt, item.detailText]),
+    ]),
   );
 });
 
@@ -816,23 +951,23 @@ const filteredStoryboardItems = computed<DrawerStoryboardItem[]>(() => {
   });
 });
 
-const selectedAssetItem = computed<DrawerAssetItem | null>(() => filteredAssetItems.value.find((item) => item.id === activeDrawerSelectedId.value) || null);
+const selectedAssetGroup = computed<AssetDrawerGroup | null>(() => filteredAssetGroups.value.find((item) => item.id === activeDrawerSelectedId.value) || null);
 const selectedPromptItem = computed<DrawerPromptItem | null>(() => filteredPromptItems.value.find((item) => item.id === activeDrawerSelectedId.value) || null);
 const selectedWorkflowItem = computed<DrawerWorkflowItem | null>(() => filteredWorkflowItems.value.find((item) => item.id === activeDrawerSelectedId.value) || null);
 const selectedStoryboardItem = computed<DrawerStoryboardItem | null>(() => filteredStoryboardItems.value.find((item) => item.id === activeDrawerSelectedId.value) || null);
 
 const activeDrawerListItems = computed<DrawerListItemViewModel[]>(() => {
   if (drawerSection.value === "assets") {
-    return filteredAssetItems.value.map((item) => ({
-      id: item.id,
-      title: item.label,
-      subtitle: item.subtitle || `${getAssetCategoryLabel(item.libraryCategory)}资产`,
-      summary: item.prompt || `${getAssetCategoryLabel(item.libraryCategory)} · ${getFileTypeLabel(item.fileType)}`,
-      badge: getFileTypeLabel(item.fileType),
-      previewUrl: item.url,
-      previewKind: item.fileType,
-      meta: [getAssetCategoryLabel(item.libraryCategory)],
-      tags: [getAssetCategoryLabel(item.libraryCategory), getFileTypeLabel(item.fileType)],
+    return filteredAssetGroups.value.map((group) => ({
+      id: group.id,
+      title: group.title,
+      subtitle: group.subtitle || `${getAssetCategoryLabel(group.libraryCategory)}主体`,
+      summary: group.summary || "当前主体暂无详情",
+      badge: `${group.nativeItems.length + group.derivedItems.length} 项`,
+      previewUrl: group.nativeItems[0]?.url || group.derivedItems[0]?.url || "",
+      previewKind: group.nativeItems[0]?.fileType || group.derivedItems[0]?.fileType || "text",
+      meta: [`${group.nativeItems.length} 个原生资产`, `${group.derivedItems.length} 个衍生资产`],
+      tags: [getAssetCategoryLabel(group.libraryCategory)],
     }));
   }
   if (drawerSection.value === "prompts") {
@@ -876,7 +1011,7 @@ const activeDrawerListItems = computed<DrawerListItemViewModel[]>(() => {
 
 const activeDrawerEmptyText = computed(() => {
   if (drawerSection.value === "assets") {
-    return `当前剧集暂无可发送的${activeDrawerSecondaryLabel.value}`;
+    return `当前剧集暂无可查看的${activeDrawerSecondaryLabel.value}主体`;
   }
   if (drawerSection.value === "prompts") {
     return `当前剧集暂无可发送的${activeDrawerSecondaryLabel.value}提示词`;
@@ -2133,6 +2268,42 @@ watch(editorPromptNode, (node) => {
   gap: 6px;
   min-width: 0;
   flex: 1;
+}
+
+.drawer-list-item-preview,
+.drawer-reference-preview {
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(209, 213, 219, 0.84);
+  background: rgba(229, 231, 235, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawer-list-item-preview {
+  aspect-ratio: 16 / 9;
+}
+
+.drawer-reference-preview {
+  aspect-ratio: 16 / 9;
+}
+
+.drawer-list-item-preview.kind-image,
+.drawer-reference-preview.kind-image {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.drawer-list-item-preview img,
+.drawer-list-item-preview video,
+.drawer-reference-preview img,
+.drawer-reference-preview video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: rgba(229, 231, 235, 0.72);
 }
 
 .drawer-list-item-topline,
