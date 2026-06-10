@@ -10,58 +10,87 @@
       </div>
       <div class="historyItemBox">
         <div
-          class="historyItem"
-          :class="{ active: v.id === selectVideoId, generating: v.state === '生成中', failed: v.state === '生成失败' }"
+          class="historyCard"
           v-for="v in currentTrack?.videoList"
-          :key="v.id"
-          @click="previewVideo(v)">
-          <template v-if="videoCoverMap[v.src]">
-            <img :src="videoCoverMap[v.src]" class="videoCover" />
-          </template>
-          <template v-else-if="v.state !== '生成中'">
-            <video
-              :key="v.src"
-              :src="v.src"
-              preload="metadata"
-              muted
-              @loadedmetadata="
-                (e: Event) => {
-                  (e.target as HTMLVideoElement).currentTime = 0.5;
-                }
-              "
-              @seeked="
-                (e: Event) => {
-                  const el = e.target as HTMLVideoElement;
-                  captureVideoCover(v.src);
-                  el.style.display = 'none';
-                }
-              " />
-          </template>
-          <div v-if="v.state === '生成中'" class="loadingOverlay c fc">
-            <t-loading size="24px" />
-            <span class="loadingText">{{ $t("workbench.generate.generating") }}</span>
+          :key="v.id">
+          <div
+            class="historyItem"
+            :class="{ active: v.id === selectVideoId, generating: v.state === '生成中', failed: v.state === '生成失败' }"
+            @click="previewVideo(v)">
+            <template v-if="videoCoverMap[v.src]">
+              <img :src="videoCoverMap[v.src]" class="videoCover" />
+            </template>
+            <template v-else-if="v.state !== '生成中' && v.src">
+              <video
+                :key="v.src"
+                :src="v.src"
+                preload="metadata"
+                muted
+                @loadedmetadata="
+                  (e: Event) => {
+                    (e.target as HTMLVideoElement).currentTime = 0.5;
+                  }
+                "
+                @seeked="
+                  (e: Event) => {
+                    const el = e.target as HTMLVideoElement;
+                    captureVideoCover(v.src);
+                    el.style.display = 'none';
+                  }
+                " />
+            </template>
+            <div v-if="v.state === '生成中'" class="loadingOverlay c fc">
+              <t-loading size="24px" />
+              <span class="loadingText">{{ $t("workbench.generate.generating") }}</span>
+            </div>
+            <t-tooltip v-if="v.state == '生成失败'" placement="top" :content="v?.errorReason! ?? ''" theme="light">
+              <t-tag class="stateTag" theme="danger" size="small">
+                {{ $t("workbench.generate.generateFailed") }}
+              </t-tag>
+            </t-tooltip>
+            <div v-if="v.state !== '生成中'" class="selectBtn" @click.stop="selectVideo(v)">
+              <i-check size="16" />
+            </div>
+            <div class="delBtn" @click.stop="handleDeleteVideo(v)">
+              <i-delete size="16" />
+            </div>
+            <div v-if="v.state !== '生成中' && v.state !== '生成失败'" class="download" @click.stop="downloadVideo(v)">
+              <i-to-bottom size="16" />
+            </div>
+            <div v-if="v.state !== '生成中' && v.state !== '生成失败'" class="playBtn" @click.stop="openVideoPlayer(v)">
+              <i-play size="16" />
+            </div>
           </div>
-          <t-tooltip v-if="v.state == '生成失败'" placement="top" :content="v?.errorReason! ?? ''" theme="light">
-            <t-tag class="stateTag" theme="danger" size="small">
-              {{ $t("workbench.generate.generateFailed") }}
-            </t-tag>
-          </t-tooltip>
-          <div v-if="v.state !== '生成中'" class="selectBtn" @click.stop="selectVideo(v)">
-            <i-check size="16" />
-          </div>
-          <div class="delBtn" @click.stop="handleDeleteVideo(v)">
-            <i-delete size="16" />
-          </div>
-          <div v-if="v.state !== '生成中' && v.state !== '生成失败'" class="download" @click.stop="downloadVideo(v)">
-            <i-to-bottom size="16" />
-          </div>
-          <div v-if="v.state !== '生成中' && v.state !== '生成失败'" class="playBtn" @click.stop="openVideoPlayer(v)">
-            <i-play size="16" />
-          </div>
+          <t-button
+            v-if="v.state === '生成失败'"
+            class="recoverBtn"
+            size="small"
+            theme="primary"
+            block
+            :loading="recoveringMap[v.id]"
+            @click.stop="openRecoverDialog(v)">
+            <template #icon><i-refresh size="14" /></template>
+            重新获取链接
+          </t-button>
         </div>
       </div>
     </div>
   </t-card>
+
+  <!-- 失败视频任务ID补填弹窗 -->
+  <t-dialog v-model:visible="recoverDialogVisible" header="重新获取视频链接" width="420px" placement="center" :footer="false">
+    <div class="recoverDialog">
+      <div class="recoverTip">可手动填写任务 ID；留空则使用系统已记录的任务 ID。</div>
+      <div class="recoverField">
+        <div class="recoverLabel">任务 ID</div>
+        <t-input v-model="recoverTaskId" clearable placeholder="请输入任务 ID（可选）" @enter="submitRecoverVideoLink" />
+      </div>
+      <div class="recoverFooter">
+        <t-button variant="outline" @click="recoverDialogVisible = false">取消</t-button>
+        <t-button theme="primary" :loading="recoverDialogLoading" @click="submitRecoverVideoLink">重新获取链接</t-button>
+      </div>
+    </div>
+  </t-dialog>
 
   <!-- 视频播放弹窗 -->
   <t-dialog
@@ -101,6 +130,14 @@ const selectVideoId = ref();
 const videoCoverMap = ref<Record<string, string>>({});
 const videoPlayerVisible = ref(false);
 const playingVideoSrc = ref<string>();
+const recoveringMap = ref<Record<number, boolean>>({});
+const recoverDialogVisible = ref(false);
+const recoverTargetVideo = ref<HistoryVideoItem>();
+const recoverTaskId = ref("");
+const recoverDialogLoading = computed(() => {
+  const videoId = recoverTargetVideo.value?.id;
+  return videoId ? !!recoveringMap.value[videoId] : false;
+});
 
 /** 选中历史视频并同步到后端 */
 async function selectVideo(v: HistoryVideoItem) {
@@ -147,6 +184,47 @@ async function downloadVideo(value: HistoryVideoItem) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(link.href);
+}
+
+/** 打开手动补填任务ID弹窗 */
+function openRecoverDialog(value: HistoryVideoItem) {
+  recoverTargetVideo.value = value;
+  recoverTaskId.value = "";
+  recoverDialogVisible.value = true;
+}
+
+/** 提交失败视频恢复请求 */
+function submitRecoverVideoLink() {
+  if (!recoverTargetVideo.value || recoverDialogLoading.value) return;
+  recoverVideoLink(recoverTargetVideo.value, recoverTaskId.value);
+}
+
+/** 重新查询失败视频的远端任务结果，并补回本地视频地址 */
+async function recoverVideoLink(value: HistoryVideoItem, taskId?: string) {
+  recoveringMap.value[value.id] = true;
+  try {
+    const trimmedTaskId = taskId?.trim();
+    const { data } = await axios.post("/production/workbench/recoverVideoLink", {
+      videoId: value.id,
+      taskId: trimmedTaskId || undefined,
+    });
+    if (data?.state === "已完成") {
+      value.state = "已完成";
+      value.src = data.src ?? "";
+      value.errorReason = "";
+      if (value.src) captureVideoCover(value.src);
+      window.$message.success("视频链接已重新获取");
+      recoverDialogVisible.value = false;
+      emit("refresh");
+      return;
+    }
+    window.$message.warning(data?.message ?? "远端任务仍在生成中，请稍后再试");
+  } catch (e: any) {
+    value.errorReason = e?.message ?? "重新获取视频链接失败";
+    window.$message.error(value.errorReason);
+  } finally {
+    recoveringMap.value[value.id] = false;
+  }
 }
 
 /** 捕获视频封面（绘制 0.5s 帧到 canvas） */
@@ -222,9 +300,13 @@ function previewVideo(v: HistoryVideoItem) {
   }
   .historyItemBox {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    grid-template-columns: repeat(auto-fill, 130px);
     gap: 10px;
     height: 100%;
+    align-items: start;
+    .historyCard {
+      width: 130px;
+    }
     .historyItem {
       position: relative;
       width: 130px;
@@ -313,6 +395,36 @@ function previewVideo(v: HistoryVideoItem) {
         }
       }
     }
+    .recoverBtn {
+      width: 100%;
+      height: 28px;
+      margin-top: 6px;
+      color: #fff;
+      background: var(--td-brand-color);
+      border-color: var(--td-brand-color);
+    }
+  }
+}
+
+.recoverDialog {
+  .recoverTip {
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: var(--td-text-color-secondary);
+  }
+  .recoverField {
+    margin-bottom: 12px;
+  }
+  .recoverLabel {
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--td-text-color-primary);
+  }
+  .recoverFooter {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
   }
 }
 
