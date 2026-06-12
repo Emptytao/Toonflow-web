@@ -20,6 +20,41 @@
             <div class="promptInput" @focusout="handlePromptBlur">
               <promptEditor v-model="currentTrack.prompt" :references="references" :placeholder="$t('workbench.generate.promptPlaceholder')" />
             </div>
+            <div class="bgmPanel">
+              <div class="panelTitle">BGM 推荐</div>
+              <div class="panelContent">
+                {{ currentTrack.bgmSuggestion || bgmSuggestionFallback }}
+              </div>
+            </div>
+            <div class="tracePanel">
+              <div class="panelTitle">AI 思考过程</div>
+              <div class="panelContent">{{ aiThinkingFallback }}</div>
+            </div>
+            <div class="tracePanel">
+              <div class="panelTitle">调用 Skill / Tool</div>
+              <div class="panelMeta">
+                <div class="metaRow">
+                  <span class="metaLabel">Skill</span>
+                  <span class="metaValue">{{ currentTrack.aiTrace?.skill || "videoPromptGeneration" }}</span>
+                </div>
+                <div class="metaRow">
+                  <span class="metaLabel">Tool</span>
+                  <div v-if="currentTrack.aiTrace?.tools?.length" class="chips">
+                    <span
+                      v-for="tool in currentTrack.aiTrace.tools"
+                      :key="tool"
+                      class="chip">
+                      {{ tool }}
+                    </span>
+                  </div>
+                  <span
+                    v-else
+                    class="metaValue">
+                    这条提示词暂未记录 Tool，重新生成提示词后会补齐
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </t-card>
       </div>
@@ -43,6 +78,43 @@
         :clampDuration="clampDuration"
         @getData="getGenerateData" />
     </div>
+
+    <t-dialog v-model:visible="generatePreviewVisible" header="生成前检查" width="760px" placement="center" :footer="false" destroy-on-close>
+      <div class="generatePreview" v-if="currentTrack">
+        <div class="previewSection">
+          <div class="previewTitle">AI 提示词</div>
+          <div class="previewBlock">{{ currentTrack.prompt || "当前暂无提示词，请先生成提示词。" }}</div>
+        </div>
+        <div class="previewSection">
+          <div class="previewTitle">BGM 推荐</div>
+          <div class="previewBlock">{{ currentTrack.bgmSuggestion || bgmSuggestionFallback }}</div>
+        </div>
+        <div class="previewSection">
+          <div class="previewTitle">调用 Skill</div>
+          <div class="previewBlock">{{ currentTrack.aiTrace?.skill || "videoPromptGeneration" }}</div>
+        </div>
+        <div class="previewSection">
+          <div class="previewTitle">调用 Tool</div>
+          <div v-if="currentTrack.aiTrace?.tools?.length" class="chips">
+            <span
+              v-for="tool in currentTrack.aiTrace.tools"
+              :key="tool"
+              class="chip">
+              {{ tool }}
+            </span>
+          </div>
+          <div v-else class="previewBlock">当前未记录 Tool。</div>
+        </div>
+        <div class="previewSection">
+          <div class="previewTitle">AI 思考过程</div>
+          <div class="previewBlock">{{ aiThinkingFallback }}</div>
+        </div>
+        <div class="previewFooter">
+          <t-button variant="outline" @click="generatePreviewVisible = false">取消</t-button>
+          <t-button theme="primary" :loading="generateSubmitLoading" @click="submitGenerateVideo">开始生成</t-button>
+        </div>
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -62,7 +134,7 @@ const { project } = storeToRefs(projectStore());
 const episodesId = inject<Ref<number>>("episodesId")!;
 const activeTrackIndex = ref(0);
 const cacheStore = imageListCacheStore();
-const { getCache, setCache, removeCache, initCacheFromTrackList, warmUpUrls } = cacheStore;
+const { getCache, setCache, initCacheFromTrackList, warmUpUrls } = cacheStore;
 const { urlMap } = storeToRefs(cacheStore);
 
 const modeOptions = ref<VideoModel>({
@@ -75,6 +147,8 @@ const modeOptions = ref<VideoModel>({
 }); // 当前模型配置
 
 const trackList = ref<TrackItem[]>([]); // 轨道列表
+const generatePreviewVisible = ref(false);
+const generateSubmitLoading = ref(false);
 
 const modelParmas = ref<ModelSetting>({
   mode: "",
@@ -140,11 +214,17 @@ function modeChange(newVal: string) {
       onConfirm: async () => {
         imageList.value = [];
         currentTrack.value.prompt = "";
+        currentTrack.value.bgmSuggestion = "";
+        currentTrack.value.aiTrace = null;
         dialog.destroy();
         modelParmas.value.mode = newVal;
       },
     });
   } else if (newVal) {
+    if (currentTrack.value) {
+      currentTrack.value.bgmSuggestion = "";
+      currentTrack.value.aiTrace = null;
+    }
     modelParmas.value.mode = newVal;
   }
 }
@@ -183,6 +263,20 @@ const currentTrack = computed({
   set(val) {
     trackList.value[activeTrackIndex.value] = val;
   },
+});
+const bgmSuggestionFallback = computed(() => {
+  if (!currentTrack.value?.prompt?.trim()) {
+    return "当前还没有 BGM 推荐，请先生成提示词。";
+  }
+  return "这条提示词暂时没有生成出 BGM 推荐。重新生成提示词后会再次尝试。";
+});
+const aiThinkingFallback = computed(() => {
+  const thinking = currentTrack.value?.aiTrace?.thinking?.trim();
+  if (thinking) return thinking;
+  if (!currentTrack.value?.prompt?.trim()) {
+    return "当前还没有 AI 思考过程，请先生成提示词。";
+  }
+  return "这条提示词暂未记录 AI 思考过程。通常是旧数据生成时未保存，或当前模型没有返回 reasoning；重新生成提示词后会尝试补齐。";
 });
 /** 当前轨道是否正在生成提示词 */
 const activeTrackGenTextLoading = computed(() => {
@@ -336,7 +430,9 @@ async function genText() {
       model: modelParmas.value.model,
       mode: modelParmas.value.mode,
     });
-    changeTrack.prompt = data;
+    changeTrack.prompt = data?.prompt ?? "";
+    changeTrack.bgmSuggestion = data?.bgmSuggestion ?? "";
+    changeTrack.aiTrace = data?.aiTrace ?? null;
   } catch (e) {
     window.$message.error((e as Error)?.message ?? "提示词生成失败");
   } finally {
@@ -394,51 +490,54 @@ onMounted(() => {
 });
 /** 单个轨道生成视频 */
 async function generateVideo() {
-  const dlg = DialogPlugin.confirm({
-    header: $t("workbench.generate.generateConfirm"),
-    body: $t("workbench.generate.generateConfirmBody"),
-    onConfirm: async () => {
-      dlg.destroy();
-      try {
-        const { data } = await axios.post("/production/workbench/generateVideo", {
-          projectId: project.value?.id,
-          scriptId: episodesId.value,
-          uploadData:
-            modelParmas.value.mode === "text"
-              ? []
-              : (() => {
-                  const frameMode = ["startEndRequired", "endFrameOptional", "startFrameOptional"];
-                  const preSliced = frameMode.includes(modelParmas.value.mode)
-                    ? imageList.value.slice(0, 2)
-                    : modelParmas.value.mode === "singleImage"
-                      ? imageList.value.slice(0, 1)
-                      : imageList.value;
-                  const filtered = preSliced.filter((item) => Boolean(item.src) && item.id).map(({ id, sources }) => ({ id, sources }));
-                  if (frameMode.includes(modelParmas.value.mode)) return filtered.slice(0, 2);
-                  if (modelParmas.value.mode === "singleImage") return filtered.slice(0, 1);
-                  return filtered;
-                })(),
-          prompt: currentTrack.value.prompt,
-          model: modelParmas.value.model,
-          mode: modelParmas.value.mode,
-          resolution: modelParmas.value.resolution,
-          duration: modelParmas.value.duration,
-          audio: modelParmas.value.audio,
-          trackId: currentTrack.value.id,
-        });
-        window.$message.success($t("workbench.generate.generateStarted"));
-        currentTrack.value.videoList.push({
-          id: data,
-          state: "生成中",
-          src: "",
-        });
-      } catch (e) {
-        window.$message.error((e as any)?.message ?? "视频发起生成请求失败");
-      } finally {
-      }
-    },
-    onCancel: () => dlg.destroy(),
-  });
+  generatePreviewVisible.value = true;
+}
+
+async function submitGenerateVideo() {
+  if (!currentTrack.value?.prompt?.trim()) {
+    window.$message.warning("请先生成或填写视频提示词");
+    return;
+  }
+  generateSubmitLoading.value = true;
+  try {
+    const { data } = await axios.post("/production/workbench/generateVideo", {
+      projectId: project.value?.id,
+      scriptId: episodesId.value,
+      uploadData:
+        modelParmas.value.mode === "text"
+          ? []
+          : (() => {
+              const frameMode = ["startEndRequired", "endFrameOptional", "startFrameOptional"];
+              const preSliced = frameMode.includes(modelParmas.value.mode)
+                ? imageList.value.slice(0, 2)
+                : modelParmas.value.mode === "singleImage"
+                  ? imageList.value.slice(0, 1)
+                  : imageList.value;
+              const filtered = preSliced.filter((item) => Boolean(item.src) && item.id).map(({ id, sources }) => ({ id, sources }));
+              if (frameMode.includes(modelParmas.value.mode)) return filtered.slice(0, 2);
+              if (modelParmas.value.mode === "singleImage") return filtered.slice(0, 1);
+              return filtered;
+            })(),
+      prompt: currentTrack.value.prompt,
+      model: modelParmas.value.model,
+      mode: modelParmas.value.mode,
+      resolution: modelParmas.value.resolution,
+      duration: modelParmas.value.duration,
+      audio: modelParmas.value.audio,
+      trackId: currentTrack.value.id,
+    });
+    window.$message.success($t("workbench.generate.generateStarted"));
+    currentTrack.value.videoList.push({
+      id: data,
+      state: "生成中",
+      src: "",
+    });
+    generatePreviewVisible.value = false;
+  } catch (e) {
+    window.$message.error((e as any)?.message ?? "视频发起生成请求失败");
+  } finally {
+    generateSubmitLoading.value = false;
+  }
 }
 let pollTimer: NodeJS.Timeout | null = null;
 
@@ -535,10 +634,68 @@ onUnmounted(() => {
           min-height: 0;
           display: flex;
           flex-direction: column;
+          gap: 12px;
           .promptInput {
             flex: 1;
             min-height: 0;
             overflow-y: auto;
+          }
+          .bgmPanel {
+            flex-shrink: 0;
+            padding: 10px 12px;
+            border-radius: 6px;
+            background: var(--td-bg-color-secondarycontainer);
+            .panelTitle {
+              margin-bottom: 6px;
+              font-size: 13px;
+              font-weight: 600;
+              color: var(--td-text-color-primary);
+            }
+            .panelContent {
+              font-size: 13px;
+              line-height: 1.6;
+              color: var(--td-text-color-secondary);
+              white-space: pre-wrap;
+            }
+          }
+          .tracePanel {
+            flex-shrink: 0;
+            padding: 10px 12px;
+            border-radius: 6px;
+            background: var(--td-bg-color-secondarycontainer);
+            .panelTitle {
+              margin-bottom: 6px;
+              font-size: 13px;
+              font-weight: 600;
+              color: var(--td-text-color-primary);
+            }
+            .panelContent {
+              font-size: 13px;
+              line-height: 1.6;
+              color: var(--td-text-color-secondary);
+              white-space: pre-wrap;
+            }
+            .panelMeta {
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+            }
+            .metaRow {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+            }
+            .metaLabel {
+              font-size: 12px;
+              font-weight: 600;
+              color: var(--td-text-color-placeholder);
+            }
+            .metaValue {
+              font-size: 13px;
+              line-height: 1.6;
+              color: var(--td-text-color-secondary);
+              white-space: pre-wrap;
+            }
           }
         }
       }
@@ -550,6 +707,54 @@ onUnmounted(() => {
     }
   }
   .track {
+  }
+}
+
+.generatePreview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  .previewSection {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .previewTitle {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+  }
+  .previewBlock {
+    max-height: 180px;
+    padding: 10px 12px;
+    overflow: auto;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    border-radius: 6px;
+    background: var(--td-bg-color-secondarycontainer);
+    color: var(--td-text-color-secondary);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: rgba(var(--td-brand-color-rgb, 0, 82, 217), 0.1);
+    color: var(--td-brand-color);
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .previewFooter {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
   }
 }
 </style>

@@ -44,9 +44,21 @@ interface StoryboardItem {
   videoDesc?: string | null;
 }
 
+interface VideoPromptAiTrace {
+  prompt: string;
+  thinking: string;
+  skill: string;
+  tools: string[];
+  modelName: string;
+  inputSummary: string;
+  visualManual: string;
+}
+
 interface TrackItem {
   id: number;
   prompt: string;
+  bgmSuggestion?: string;
+  aiTrace?: VideoPromptAiTrace | null;
   state: "未生成" | "生成中" | "已完成" | "生成失败";
   reason?: string;
   selectVideoId?: number | null;

@@ -265,7 +265,11 @@ function batchGenText() {
       })
       .then(({ data }) => {
         const targetTrack = trackList.value.find((item) => item.id === trackId);
-        if (targetTrack) targetTrack.prompt = data;
+        if (targetTrack) {
+          targetTrack.prompt = data?.prompt ?? "";
+          targetTrack.bgmSuggestion = data?.bgmSuggestion ?? "";
+          targetTrack.aiTrace = data?.aiTrace ?? null;
+        }
       })
       .catch((e) => {
         window.$message.error(`第${index + 1}段 提示词生成失败,${(e as Error)?.message ?? "提示词生成失败"}`);
