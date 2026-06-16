@@ -12,11 +12,29 @@
       <div class="prompt" v-if="currentTrack">
         <t-card :title="'#' + (activeTrackIndex + 1) + $t('workbench.generate.generateText')" header-bordered class="videoPrompt">
           <template #actions>
-            <t-button size="small" class="genTextbtn" :loading="activeTrackGenTextLoading" @click="genText">
-              {{ $t("workbench.generate.generateText") }}
-            </t-button>
+            <div class="actionGroup">
+              <t-select
+                v-model="currentTemplateKey"
+                size="small"
+                class="templateSelect"
+                :options="templateSelectOptions"
+                :placeholder="$t('workbench.generate.templatePlaceholder')" />
+              <t-button size="small" class="genTextbtn" :loading="activeTrackGenTextLoading" @click="genText">
+                {{ $t("workbench.generate.generateText") }}
+              </t-button>
+            </div>
           </template>
           <div class="promptData fc">
+            <div class="styleRow">
+              <span class="styleLabel">{{ $t("workbench.generate.promptStyle") }}</span>
+              <t-select
+                :value="currentTrack.promptStyle"
+                class="styleSelect"
+                size="small"
+                :options="promptStyleSelectOptions"
+                @change="handlePromptStyleChange">
+              </t-select>
+            </div>
             <div class="promptInput" @focusout="handlePromptBlur">
               <promptEditor v-model="currentTrack.prompt" :references="references" :placeholder="$t('workbench.generate.promptPlaceholder')" />
             </div>
@@ -26,34 +44,13 @@
                 {{ currentTrack.bgmSuggestion || bgmSuggestionFallback }}
               </div>
             </div>
-            <div class="tracePanel">
-              <div class="panelTitle">AI 思考过程</div>
-              <div class="panelContent">{{ aiThinkingFallback }}</div>
-            </div>
-            <div class="tracePanel">
-              <div class="panelTitle">调用 Skill / Tool</div>
-              <div class="panelMeta">
-                <div class="metaRow">
-                  <span class="metaLabel">Skill</span>
-                  <span class="metaValue">{{ currentTrack.aiTrace?.skill || "videoPromptGeneration" }}</span>
-                </div>
-                <div class="metaRow">
-                  <span class="metaLabel">Tool</span>
-                  <div v-if="currentTrack.aiTrace?.tools?.length" class="chips">
-                    <span
-                      v-for="tool in currentTrack.aiTrace.tools"
-                      :key="tool"
-                      class="chip">
-                      {{ tool }}
-                    </span>
-                  </div>
-                  <span
-                    v-else
-                    class="metaValue">
-                    这条提示词暂未记录 Tool，重新生成提示词后会补齐
-                  </span>
-                </div>
-              </div>
+            <div class="traceActionRow">
+              <t-button size="small" variant="outline" class="traceActionBtn" @click="thinkingDialogVisible = true">
+                AI思考
+              </t-button>
+              <t-button size="small" variant="outline" class="traceActionBtn" @click="skillDialogVisible = true">
+                Skill / Tool
+              </t-button>
             </div>
           </div>
         </t-card>
@@ -73,6 +70,8 @@
         v-model:genTextLoadingMap="genTextLoadingMap"
         v-model="trackList"
         :image-list="imageList"
+        :prompt-style-options="resolvedPromptStyleOptions"
+        :template-options="resolvedTemplateOptions"
         @change="trackChange"
         :modelParmas="modelParmas"
         :clampDuration="clampDuration"
@@ -82,12 +81,20 @@
     <t-dialog v-model:visible="generatePreviewVisible" header="生成前检查" width="760px" placement="center" :footer="false" destroy-on-close>
       <div class="generatePreview" v-if="currentTrack">
         <div class="previewSection">
+          <div class="previewTitle">{{ $t("workbench.generate.template") }}</div>
+          <div class="previewBlock">{{ currentTemplateLabel }}</div>
+        </div>
+        <div class="previewSection">
           <div class="previewTitle">AI 提示词</div>
           <div class="previewBlock">{{ currentTrack.prompt || "当前暂无提示词，请先生成提示词。" }}</div>
         </div>
         <div class="previewSection">
           <div class="previewTitle">BGM 推荐</div>
           <div class="previewBlock">{{ currentTrack.bgmSuggestion || bgmSuggestionFallback }}</div>
+        </div>
+        <div class="previewSection">
+          <div class="previewTitle">{{ $t("workbench.generate.promptStyle") }}</div>
+          <div class="previewBlock">{{ currentPromptStyleLabel }}</div>
         </div>
         <div class="previewSection">
           <div class="previewTitle">调用 Skill</div>
@@ -115,6 +122,62 @@
         </div>
       </div>
     </t-dialog>
+
+    <t-dialog v-model:visible="thinkingDialogVisible" header="AI 思考过程" width="760px" placement="center" :footer="false" destroy-on-close class="traceDialog">
+      <div class="traceDialogBody">
+        <div class="traceDialogContent">{{ aiThinkingFallback }}</div>
+      </div>
+    </t-dialog>
+
+    <t-dialog v-model:visible="skillDialogVisible" header="调用 Skill / Tool" width="760px" placement="center" :footer="false" destroy-on-close class="traceDialog">
+      <div class="traceDialogBody">
+        <div class="traceMeta">
+          <div class="metaRow">
+            <span class="metaLabel">{{ $t("workbench.generate.template") }}</span>
+            <span class="metaValue">{{ currentTemplateLabel }}</span>
+          </div>
+          <div class="metaRow">
+            <span class="metaLabel">{{ $t("workbench.generate.promptStyle") }}</span>
+            <span class="metaValue">{{ currentPromptStyleLabel }}</span>
+          </div>
+          <div class="metaRow" v-if="currentTrack?.aiTrace?.styleSkillName">
+            <span class="metaLabel">Style Skill</span>
+            <span class="metaValue">{{ currentTrack.aiTrace?.styleSkillName }}</span>
+          </div>
+          <div class="metaRow">
+            <span class="metaLabel">Skill</span>
+            <span class="metaValue">{{ currentTrack?.aiTrace?.skill || "videoPromptGeneration" }}</span>
+          </div>
+          <div class="metaRow" v-if="currentTrack?.aiTrace?.systemLayers?.length">
+            <span class="metaLabel">System Layers</span>
+            <div class="chips">
+              <span
+                v-for="layer in currentTrack.aiTrace.systemLayers"
+                :key="layer"
+                class="chip">
+                {{ layer }}
+              </span>
+            </div>
+          </div>
+          <div class="metaRow">
+            <span class="metaLabel">Tool</span>
+            <div v-if="currentTrack?.aiTrace?.tools?.length" class="chips">
+              <span
+                v-for="tool in currentTrack.aiTrace.tools"
+                :key="tool"
+                class="chip">
+                {{ tool }}
+              </span>
+            </div>
+            <span
+              v-else
+              class="metaValue">
+              这条提示词暂未记录 Tool，重新生成提示词后会补齐
+            </span>
+          </div>
+        </div>
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -129,6 +192,22 @@ import axios from "@/utils/axios";
 import projectStore from "@/stores/project";
 import promptEditor from "@/components/promptEditor.vue";
 import imageListCacheStore from "@/stores/imageListCache";
+
+const DEFAULT_PROMPT_STYLE: PromptStyle = "general";
+const DEFAULT_TEMPLATE_KEY: VideoPromptTemplateKey = "auto";
+const FALLBACK_PROMPT_STYLE_OPTIONS: PromptStyleOption[] = [
+  { value: "general", label: "通用润色" },
+  { value: "high_energy", label: "高能戏剧化" },
+  { value: "lyrical", label: "慢节奏细腻质感" },
+];
+const FALLBACK_TEMPLATE_OPTIONS: VideoPromptTemplateOption[] = [
+  { value: "auto", label: "按模型自动选择" },
+  { value: "universalMulti-parameter", label: "通用多参数模式" },
+  { value: "universalFirstAndLastFrame", label: "通用首尾帧模式" },
+  { value: "wan2.6Single-imageFirstFrame", label: "Wan 2.6 单图首帧模式" },
+  { value: "seedance2Multi-parameter", label: "Seedance 2.0 多参数模式" },
+  { value: "omni_flash-Multi-parameter", label: "Omni Flash 多参数模式" },
+];
 
 const { project } = storeToRefs(projectStore());
 const episodesId = inject<Ref<number>>("episodesId")!;
@@ -149,6 +228,11 @@ const modeOptions = ref<VideoModel>({
 const trackList = ref<TrackItem[]>([]); // 轨道列表
 const generatePreviewVisible = ref(false);
 const generateSubmitLoading = ref(false);
+const thinkingDialogVisible = ref(false);
+const skillDialogVisible = ref(false);
+const promptStyleOptions = ref<PromptStyleOption[]>([]);
+const templateOptions = ref<VideoPromptTemplateOption[]>([]);
+const currentTemplateKey = ref<VideoPromptTemplateKey>("auto");
 
 const modelParmas = ref<ModelSetting>({
   mode: "",
@@ -179,15 +263,12 @@ const imageList = computed({
       const cached = getCache(pid, sid, trackId);
 
       if (cached?.length) {
-        cached.sort((a, b) => getImageItemPriority(a) - getImageItemPriority(b));
-        return cached;
+        return [...cached].sort((a, b) => getImageItemPriority(a) - getImageItemPriority(b));
       }
     }
     const medias = currentTrack.value?.medias;
     if (!medias?.length) return [];
-    (medias as UploadItem[]).sort((a, b) => getImageItemPriority(a) - getImageItemPriority(b));
-
-    return medias as UploadItem[];
+    return [...(medias as UploadItem[])].sort((a, b) => getImageItemPriority(a) - getImageItemPriority(b));
   },
   set(val: UploadItem[]) {
     if (currentTrack.value) {
@@ -213,17 +294,21 @@ function modeChange(newVal: string) {
       cancelBtn: $t("settings.memory.msg.cancel"),
       onConfirm: async () => {
         imageList.value = [];
-        currentTrack.value.prompt = "";
-        currentTrack.value.bgmSuggestion = "";
-        currentTrack.value.aiTrace = null;
-        dialog.destroy();
-        modelParmas.value.mode = newVal;
-      },
+      currentTrack.value.prompt = "";
+      currentTrack.value.bgmSuggestion = "";
+      currentTrack.value.aiTrace = null;
+      currentTrack.value.promptStyle = DEFAULT_PROMPT_STYLE;
+      currentTemplateKey.value = DEFAULT_TEMPLATE_KEY;
+      dialog.destroy();
+      modelParmas.value.mode = newVal;
+    },
     });
   } else if (newVal) {
     if (currentTrack.value) {
       currentTrack.value.bgmSuggestion = "";
       currentTrack.value.aiTrace = null;
+      currentTrack.value.promptStyle = currentTrack.value.promptStyle || DEFAULT_PROMPT_STYLE;
+      currentTemplateKey.value = currentTemplateKey.value || DEFAULT_TEMPLATE_KEY;
     }
     modelParmas.value.mode = newVal;
   }
@@ -264,6 +349,44 @@ const currentTrack = computed({
     trackList.value[activeTrackIndex.value] = val;
   },
 });
+const promptStyleSelectOptions = computed(() => {
+  const options = promptStyleOptions.value.length ? promptStyleOptions.value : FALLBACK_PROMPT_STYLE_OPTIONS;
+  return options.map((item) => ({ label: item.label, value: item.value }));
+});
+const templateSelectOptions = computed(() => {
+  const source = templateOptions.value.length ? templateOptions.value : FALLBACK_TEMPLATE_OPTIONS;
+  return source.map((item) => ({ label: item.label, value: item.value }));
+});
+const resolvedPromptStyleOptions = computed(() => (promptStyleOptions.value.length ? promptStyleOptions.value : FALLBACK_PROMPT_STYLE_OPTIONS));
+const resolvedTemplateOptions = computed(() => (templateOptions.value.length ? templateOptions.value : FALLBACK_TEMPLATE_OPTIONS));
+const promptStyleLabelMap = computed<Record<PromptStyle, string>>(() => {
+  const source = promptStyleOptions.value.length ? promptStyleOptions.value : FALLBACK_PROMPT_STYLE_OPTIONS;
+  return source.reduce(
+    (acc, item) => {
+      acc[item.value] = item.label;
+      return acc;
+    },
+    { general: "通用润色", high_energy: "高能戏剧化", lyrical: "慢节奏细腻质感" } as Record<PromptStyle, string>,
+  );
+});
+const currentPromptStyleLabel = computed(() => {
+  const style = currentTrack.value?.promptStyle || DEFAULT_PROMPT_STYLE;
+  return promptStyleLabelMap.value[style];
+});
+const currentTemplateLabel = computed(() => {
+  const templateKey = currentTemplateKey.value || "auto";
+  const source = resolvedTemplateOptions.value;
+  return source.find((item) => item.value === templateKey)?.label || "按模型自动选择";
+});
+watch(
+  templateOptions,
+  (options) => {
+    if (options.length && !options.some((item) => item.value === currentTemplateKey.value)) {
+      currentTemplateKey.value = "auto";
+    }
+  },
+  { immediate: true },
+);
 const bgmSuggestionFallback = computed(() => {
   if (!currentTrack.value?.prompt?.trim()) {
     return "当前还没有 BGM 推荐，请先生成提示词。";
@@ -366,10 +489,15 @@ async function getGenerateData() {
   });
 
   storyboardList.value = data.storyboardList;
+  promptStyleOptions.value = Array.isArray(data.promptStyleOptions) && data.promptStyleOptions.length ? data.promptStyleOptions : FALLBACK_PROMPT_STYLE_OPTIONS;
+  templateOptions.value = Array.isArray(data.templateOptions) && data.templateOptions.length ? data.templateOptions : FALLBACK_TEMPLATE_OPTIONS;
   // 优先使用本地缓存，没有缓存则用后端数据并写入缓存
   const pid = project.value?.id;
   const sid = episodesId.value;
   if (pid != null && sid != null) {
+    data.trackList.forEach((track: TrackItem) => {
+      track.promptStyle = track.promptStyle || DEFAULT_PROMPT_STYLE;
+    });
     // 先将没有缓存的轨道写入缓存（保留已有本地编辑）
     initCacheFromTrackList(pid, sid, data.trackList);
     // 批量向后端请求文件路径对应的完整 URL
@@ -385,6 +513,7 @@ async function getGenerateData() {
     // 整体赋值触发响应式
     trackList.value = [...data.trackList];
   }
+  currentTemplateKey.value = currentTemplateKey.value || DEFAULT_TEMPLATE_KEY;
 
   modelParmas.value.duration = clampDuration(data.trackList?.[activeTrackIndex.value]?.duration);
 }
@@ -393,6 +522,15 @@ function handlePromptBlur() {
   const trackId = trackList.value[activeTrackIndex.value]?.id;
   if (trackId == null) return;
   axios.post("/production/workbench/updateVideoPrompt", { id: trackId, prompt: currentTrack.value?.prompt });
+}
+function handlePromptStyleChange(value: any) {
+  const nextStyle = (Array.isArray(value) ? value[0] : value) as PromptStyle;
+  const trackId = trackList.value[activeTrackIndex.value]?.id;
+  if (!trackId || !nextStyle || currentTrack.value?.promptStyle === nextStyle) return;
+  currentTrack.value.promptStyle = nextStyle;
+  axios
+    .post("/production/workbench/updateVideoPrompt", { id: trackId, promptStyle: nextStyle, prompt: currentTrack.value?.prompt ?? "" })
+    .catch((e) => window.$message.error((e as Error)?.message ?? $t("workbench.generate.promptStyleSaveFailed")));
 }
 const genTextLoadingMap = ref<Record<number, boolean>>({}); // trackId -> 是否正在生成提示词
 
@@ -429,10 +567,13 @@ async function genText() {
       info: info,
       model: modelParmas.value.model,
       mode: modelParmas.value.mode,
+      promptStyle: changeTrack.promptStyle || DEFAULT_PROMPT_STYLE,
+      templateKey: currentTemplateKey.value || DEFAULT_TEMPLATE_KEY,
     });
     changeTrack.prompt = data?.prompt ?? "";
     changeTrack.bgmSuggestion = data?.bgmSuggestion ?? "";
     changeTrack.aiTrace = data?.aiTrace ?? null;
+    changeTrack.promptStyle = data?.promptStyle ?? changeTrack.promptStyle ?? DEFAULT_PROMPT_STYLE;
   } catch (e) {
     window.$message.error((e as Error)?.message ?? "提示词生成失败");
   } finally {
@@ -462,6 +603,12 @@ function trackChange(prevIndex?: number) {
   // imageList 是基于 currentTrack.medias 的计算属性，切换轨道后自动切换数据
   if (modelParmas.value.mode == "singleImage" && imageList.value.length > 1) {
     imageList.value = imageList.value.slice(0, 1);
+  }
+  if (currentTrack.value && !currentTrack.value.promptStyle) {
+    currentTrack.value.promptStyle = DEFAULT_PROMPT_STYLE;
+  }
+  if (!currentTemplateKey.value) {
+    currentTemplateKey.value = DEFAULT_TEMPLATE_KEY;
   }
   modelParmas.value.duration = clampDuration(trackList.value?.[activeTrackIndex.value]?.duration);
 }
@@ -658,6 +805,28 @@ onUnmounted(() => {
               white-space: pre-wrap;
             }
           }
+          .styleRow {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+            .styleLabel {
+              font-size: 13px;
+              font-weight: 600;
+              color: var(--td-text-color-primary);
+            }
+            .styleSelect {
+              width: 220px;
+            }
+          }
+          .traceActionRow {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+            .traceActionBtn {
+              min-width: 92px;
+            }
+          }
           .tracePanel {
             flex-shrink: 0;
             padding: 10px 12px;
@@ -756,5 +925,35 @@ onUnmounted(() => {
     gap: 8px;
     margin-top: 4px;
   }
+}
+
+.traceDialogBody {
+  min-width: 420px;
+  min-height: 220px;
+  max-width: min(90vw, 1100px);
+  max-height: 72vh;
+  padding: 12px;
+  overflow: auto;
+  resize: both;
+  border-radius: 12px;
+  border: 1px solid var(--td-border-level-1-color);
+  background: var(--td-bg-color-container);
+}
+
+.traceDialogContent {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--td-text-color-secondary);
+  white-space: pre-wrap;
+}
+
+.traceMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.traceDialog :deep(.t-dialog) {
+  max-width: min(90vw, 1100px);
 }
 </style>

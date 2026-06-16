@@ -7,6 +7,18 @@
           <span class="selectedCount" v-if="checkedTrackIds.length">{{ $t("workbench.generate.selected") }} {{ checkedTrackIds.length }} 段</span>
         </div>
         <div class="right f ac">
+          <t-select
+            v-model="batchTemplateKey"
+            size="small"
+            class="batchTemplateSelect"
+            :options="templateOptions"
+            :placeholder="$t('workbench.generate.templateBatchPlaceholder')" />
+          <t-select
+            v-model="batchPromptStyle"
+            size="small"
+            class="batchStyleSelect"
+            :options="promptStyleOptions"
+            :placeholder="$t('workbench.generate.promptStyleBatchPlaceholder')" />
           <t-button size="small" variant="outline" @click="batchDownloadVideo">{{ $t("workbench.generate.batchDownloadVideo") }}</t-button>
           <t-button size="small" variant="outline" @click="batchGenText" :loading="generateTextLoad">
             {{ $t("workbench.generate.batchGenerateText") }}
@@ -30,6 +42,7 @@
             @click.stop
             @change="(val: boolean) => toggleCheck(track.id, val)" />
           <t-tag class="indexTag" size="small">#{{ index + 1 }}</t-tag>
+          <t-tag class="styleTag" size="small" theme="primary">{{ promptStyleLabelMap[track.promptStyle || defaultPromptStyle] }}</t-tag>
           <t-tag class="selectTag" theme="success" size="small" v-if="track.selectVideoId">已选择</t-tag>
           <!-- 优先展示选中视频的首帧 -->
           <div class="thumbGroup" v-if="track.selectVideoId && getSelectedVideoSrc(track)">
@@ -82,6 +95,8 @@ const props = defineProps<{
   modelParmas: ModelSetting;
   imageList: UploadItem[];
   clampDuration: (trackDuration: number) => number;
+  promptStyleOptions: PromptStyleOption[];
+  templateOptions: VideoPromptTemplateOption[];
 }>();
 const activeTrackIndex = defineModel("activeTrackIndex", {
   default: 0,
@@ -99,6 +114,15 @@ const emit = defineEmits<{
   saveImageList: [trackId: number];
 }>();
 const checkAll = ref(false); // 全选状态
+const defaultPromptStyle: PromptStyle = "general";
+const defaultTemplateKey: VideoPromptTemplateKey = "auto";
+const promptStyleLabelMap: Record<PromptStyle, string> = {
+  general: "通用润色",
+  high_energy: "高能戏剧化",
+  lyrical: "慢节奏细腻质感",
+};
+const batchPromptStyle = ref<PromptStyle>("general");
+const batchTemplateKey = ref<VideoPromptTemplateKey>("auto");
 
 /** 视频封面缓存 src -> dataURL */
 const videoCoverMap = ref<Record<string, string>>({});
@@ -157,6 +181,8 @@ function changeIndex(index: number) {
   if (activeTrackIndex.value == index) return;
   const prevIndex = activeTrackIndex.value;
   activeTrackIndex.value = index;
+  batchPromptStyle.value = trackList.value[index]?.promptStyle || defaultPromptStyle;
+  batchTemplateKey.value = defaultTemplateKey;
   emit("change", prevIndex);
 }
 /** 删除轨道请求 */
@@ -262,6 +288,8 @@ function batchGenText() {
         info,
         model: props.modelParmas.model,
         mode: props.modelParmas.mode,
+        promptStyle: batchPromptStyle.value,
+        templateKey: batchTemplateKey.value,
       })
       .then(({ data }) => {
         const targetTrack = trackList.value.find((item) => item.id === trackId);
@@ -269,6 +297,7 @@ function batchGenText() {
           targetTrack.prompt = data?.prompt ?? "";
           targetTrack.bgmSuggestion = data?.bgmSuggestion ?? "";
           targetTrack.aiTrace = data?.aiTrace ?? null;
+          targetTrack.promptStyle = data?.promptStyle ?? batchPromptStyle.value;
         }
       })
       .catch((e) => {
@@ -396,8 +425,8 @@ watch(
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  .trackMenu {
-    margin-bottom: 10px;
+.trackMenu {
+  margin-bottom: 10px;
     .selectedCount {
       font-size: 12px;
       color: var(--td-text-color-secondary);
@@ -405,6 +434,9 @@ watch(
     }
     .right {
       gap: 8px;
+    }
+    .batchStyleSelect {
+      width: 160px;
     }
   }
   .itemBox {
@@ -446,6 +478,12 @@ watch(
       .indexTag {
         position: absolute;
         bottom: 4px;
+        left: 4px;
+        z-index: 2;
+      }
+      .styleTag {
+        position: absolute;
+        top: 4px;
         left: 4px;
         z-index: 2;
       }

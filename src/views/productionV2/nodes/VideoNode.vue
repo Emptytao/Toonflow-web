@@ -52,6 +52,7 @@
       <span>{{ displayLabel }}</span>
     </div>
     <div v-if="displayResolution" class="video-node-resolution">{{ displayResolution }}</div>
+    <div class="video-node-style">{{ promptStyleLabel }}</div>
     <div class="video-node-stage">
       <video
         v-if="previewKind === 'video' && previewUrl"
@@ -143,6 +144,14 @@ const progressPercent = computed(() => {
   if (!duration.value) return 0;
   return Math.max(0, Math.min(100, (currentTime.value / duration.value) * 100));
 });
+const promptStyleLabel = computed(() => {
+  const map: Record<string, string> = {
+    general: "通用润色",
+    high_energy: "高能戏剧化",
+    lyrical: "慢节奏细腻质感",
+  };
+  return map[props.data.promptStyle || "general"] || "通用润色";
+});
 
 function syncNodeSize(width: number, height: number) {
   const nextSize = getVisualNodeSizeFromSource(width, height);
@@ -225,7 +234,8 @@ watch(
 
 .video-node-kind-label,
 .video-node-floating-label,
-.video-node-resolution {
+.video-node-resolution,
+.video-node-style {
   position: absolute;
   display: inline-flex;
   align-items: center;
@@ -267,6 +277,12 @@ watch(
 .video-node-resolution {
   right: 0;
   top: -36px;
+}
+
+.video-node-style {
+  right: 0;
+  bottom: -36px;
+  max-width: min(220px, 100%);
 }
 
 .video-node-stage {

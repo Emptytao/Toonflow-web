@@ -85,7 +85,7 @@
               {{ $t("settings.vendor.addManually") }}
             </t-button>
           </div>
-          <t-card v-for="(item, index) in vendorModels" :key="index" class="modelCard">
+          <t-card v-for="(item, index) in vendorModels" :key="`${item.type}-${item.modelName}`" class="modelCard">
             <div class="topInfo jb ac">
               <div class="modelCardNameWrap">
                 <t-avatar v-if="getModelLogo(item.modelName)" size="24px" shape="round" :image="getModelLogo(item.modelName)!" />

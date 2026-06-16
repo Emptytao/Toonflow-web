@@ -80,6 +80,12 @@
               :options="resolutionOptions"
               placeholder="分辨率"
               @change="(value) => store.updateNodeData(node.id, { resolution: String(value || '720p') })" />
+            <t-select
+              :value="data.promptStyle"
+              class="workflow-select workflow-style-select"
+              :options="promptStyleOptions"
+              placeholder="风格"
+              @change="(value) => store.updateNodeData(node.id, { promptStyle: String(value || 'general') })" />
             <t-input-number
               :value="data.duration"
               class="workflow-number"
@@ -156,6 +162,11 @@ const resolutionOptions = computed(() =>
     value: item,
   })),
 );
+const promptStyleOptions = [
+  { label: "通用润色", value: "general" },
+  { label: "高能戏剧化", value: "high_energy" },
+  { label: "慢节奏细腻质感", value: "lyrical" },
+];
 function formatModeLabel(item: string | string[]) {
   if (Array.isArray(item)) return "多素材参考";
   const map: Record<string, string> = {
@@ -428,6 +439,10 @@ onMounted(async () => {
 
 .workflow-select {
   width: 96px;
+}
+
+.workflow-style-select {
+  width: 132px;
 }
 
 .workflow-number {

@@ -53,6 +53,7 @@ const editorContent = ref("");
 
 let savedRange: Range | null = null;
 let internalUpdate = false;
+const REFERENCE_TOKEN_REGEXP = /@(图|参考)\s*(\d+)|\n/g;
 
 // 创建引用标签元素
 function createRefTag(index: number): HTMLSpanElement {
@@ -112,20 +113,19 @@ function createRefTag(index: number): HTMLSpanElement {
 function renderPromptToEditor(text: string) {
   if (!editorRef.value) return;
   editorRef.value.innerHTML = "";
-  const regex = /@图(\d+)|\n/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = REFERENCE_TOKEN_REGEXP.exec(text)) !== null) {
     if (match.index > lastIndex) {
       editorRef.value.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
     }
     if (match[0] === "\n") {
       editorRef.value.appendChild(document.createElement("br"));
     } else {
-      editorRef.value.appendChild(createRefTag(Number(match[1]) - 1));
+      editorRef.value.appendChild(createRefTag(Number(match[2]) - 1));
       editorRef.value.appendChild(document.createTextNode("\u200B"));
     }
-    lastIndex = regex.lastIndex;
+    lastIndex = REFERENCE_TOKEN_REGEXP.lastIndex;
   }
   if (lastIndex < text.length) {
     editorRef.value.appendChild(document.createTextNode(text.substring(lastIndex)));

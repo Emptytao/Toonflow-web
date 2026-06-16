@@ -32,6 +32,13 @@
           :options="resolutionOptions"
           placeholder="分辨率"
           @change="(value) => store.updateNodeData(node.id, { resolution: String(value || '720p') })" />
+        <t-select
+          :value="data.promptStyle"
+          :options="promptStyleOptions"
+          placeholder="风格"
+          @change="(value) => store.updateNodeData(node.id, { promptStyle: String(value || 'general') })" />
+      </div>
+      <div class="field-row">
         <t-input-number
           :value="data.duration"
           :min="1"
@@ -183,6 +190,11 @@ const resolutionOptions = computed(() =>
     value: item,
   })),
 );
+const promptStyleOptions = [
+  { label: "通用润色", value: "general" },
+  { label: "高能戏剧化", value: "high_energy" },
+  { label: "慢节奏细腻质感", value: "lyrical" },
+];
 const modeOptions = computed(() =>
   (modelDetail.value?.mode ?? ["text"]).map((item) => {
     const value = Array.isArray(item) ? JSON.stringify(item) : item;
@@ -225,6 +237,10 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.field-row + .field-row {
+  margin-top: 2px;
 }
 
 .audio-row {

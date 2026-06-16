@@ -60,6 +60,7 @@ export interface CanvasV2VideoResult {
   state: CanvasV2RuntimeStatus;
   createdAt: number;
   prompt?: string;
+  promptStyle?: "general" | "high_energy" | "lyrical";
   errorMessage?: string;
   sourceRef?: CanvasSourceRef | null;
 }
@@ -102,6 +103,7 @@ export interface VideoNodeDataV2 {
   resolution: string;
   duration: number;
   audio: boolean;
+  promptStyle: "general" | "high_energy" | "lyrical";
   prompt: string;
   referenceItems: CanvasV2MediaItem[];
   runtime: CanvasV2Runtime;
@@ -210,6 +212,7 @@ export interface WorkflowBundleSnapshot {
   trackId: number;
   title: string;
   prompt: string;
+  promptStyle?: "general" | "high_energy" | "lyrical";
   state: string;
   selectedVideoId?: number | null;
   selectedVideoUrl?: string;
@@ -227,6 +230,7 @@ export interface DrawerWorkflowItem {
   title: string;
   subtitle: string;
   prompt: string;
+  promptStyle?: "general" | "high_energy" | "lyrical";
   state: string;
   selectedVideo: DrawerWorkflowHistoryItem | null;
   history: DrawerWorkflowHistoryItem[];

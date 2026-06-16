@@ -33,6 +33,13 @@ import type {
   VideoNodeDataV2,
 } from "@/views/productionV2/types";
 
+type VideoPromptStyle = "general" | "high_energy" | "lyrical";
+
+function normalizeVideoPromptStyle(value?: string | null): VideoPromptStyle {
+  if (value === "high_energy" || value === "lyrical") return value;
+  return "general";
+}
+
 const MOCK_FORCE_KEY = "production-v2-force-mock";
 const MOCK_GRAPH_KEY_PREFIX = "production-v2-mock-graph";
 const MOCK_VIDEO_URL = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
@@ -770,6 +777,7 @@ export default defineStore("productionCanvasV2", () => {
       const data = node.data as VideoNodeDataV2;
       data.model = projectVideoModel.value || data.model;
       data.mode = ensureArrayMode(projectVideoMode.value || data.mode);
+      data.promptStyle = data.promptStyle || "general";
     }
     graph.value.nodes.push(node);
     setSelection([node.id], []);
@@ -1097,12 +1105,14 @@ export default defineStore("productionCanvasV2", () => {
 
     data.title = workflow.title;
     data.prompt = workflow.prompt;
+    data.promptStyle = workflow.promptStyle || data.promptStyle || "general";
     data.referenceItems = workflow.mediaReferences.map((item) => createMediaSnapshotFromReference(item));
     data.sourceRef = nextSourceRef;
-    data.workflowSnapshot = {
-      trackId: workflow.trackId,
-      title: workflow.title,
-      prompt: workflow.prompt,
+      data.workflowSnapshot = {
+        trackId: workflow.trackId,
+        title: workflow.title,
+        prompt: workflow.prompt,
+        promptStyle: workflow.promptStyle || data.promptStyle || "general",
       state: workflow.state,
       selectedVideoId: selectedHistory?.videoId ?? null,
       selectedVideoUrl: selectedHistory?.url || "",
@@ -1551,6 +1561,7 @@ export default defineStore("productionCanvasV2", () => {
           title: trackTitle,
           subtitle: selectedVideo ? `${selectedVideo.state} · ${history.length} 条结果` : `${String(track?.state || "未生成")} · ${history.length} 条结果`,
           prompt: trackPrompt,
+          promptStyle: normalizeVideoPromptStyle(track?.promptStyle),
           state: String(track?.state || "未生成"),
           selectedVideo,
           history,
@@ -1851,15 +1862,16 @@ export default defineStore("productionCanvasV2", () => {
         const exists = data.videoResults.some((item) => item.url === job.resultUrl);
         if (!exists) {
           const resultId = crypto.randomUUID();
-          data.videoResults = [
-            {
-              id: resultId,
-              url: job.resultUrl,
-              state: job.status,
-              createdAt: Date.now(),
-              prompt: data.prompt,
-              errorMessage: job.errorMessage || "",
-            },
+        data.videoResults = [
+          {
+            id: resultId,
+            url: job.resultUrl,
+            state: job.status,
+            createdAt: Date.now(),
+            prompt: data.prompt,
+            promptStyle: data.promptStyle,
+            errorMessage: job.errorMessage || "",
+          },
             ...(data.videoResults || []),
           ];
           data.selectedResultId = resultId;

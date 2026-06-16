@@ -1,6 +1,19 @@
 type ReferenceType = "videoReference" | "imageReference" | "audioReference" | "textReference";
 type Type = "imageReference" | "startImage" | "endImage" | "videoReference" | "audioReference";
 type VideoMode = "singleImage" | "startEndRequired" | "endFrameOptional" | "startFrameOptional" | "text" | ReferenceType[];
+type PromptStyle = "general" | "high_energy" | "lyrical";
+
+type VideoPromptTemplateKey = "auto" | "universalMulti-parameter" | "universalFirstAndLastFrame" | "wan2.6Single-imageFirstFrame" | "seedance2Multi-parameter" | "omni_flash-Multi-parameter";
+
+interface PromptStyleOption {
+  value: PromptStyle;
+  label: string;
+}
+
+interface VideoPromptTemplateOption {
+  value: VideoPromptTemplateKey;
+  label: string;
+}
 
 interface UploadItemBase {
   fileType: "image" | "video" | "audio";
@@ -52,11 +65,16 @@ interface VideoPromptAiTrace {
   modelName: string;
   inputSummary: string;
   visualManual: string;
+  promptStyle?: PromptStyle;
+  styleSkillName?: string;
+  systemLayers?: string[];
 }
 
 interface TrackItem {
   id: number;
   prompt: string;
+  promptStyle: PromptStyle;
+  templateKey?: VideoPromptTemplateKey;
   bgmSuggestion?: string;
   aiTrace?: VideoPromptAiTrace | null;
   state: "未生成" | "生成中" | "已完成" | "生成失败";

@@ -64,6 +64,7 @@ export function createNodeData(type: CanvasV2NodeType) {
     resolution: "720p",
     duration: 5,
     audio: false,
+    promptStyle: "general",
     prompt: "",
     referenceItems: [],
     runtime: { ...IDLE_RUNTIME },
